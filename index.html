@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>羽球場個人練習與預約統計系統</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -21,8 +21,7 @@
     .sticky-header { position: sticky; top: 0; z-index: 10; }
   </style>
 </head>
-<!-- 使用 h-[100dvh] 替代 h-screen，以適應手機 Chrome 動態網址列 -->
-<body class="bg-slate-100 text-slate-800 h-[100dvh] flex flex-col overflow-hidden">
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden">
 
   <!-- Header -->
   <header class="bg-emerald-800 text-white px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between shadow-md shrink-0 gap-2">
@@ -92,8 +91,7 @@
   </div>
 
   <!-- Main Excel / Mobile Grid Area -->
-  <!-- 增加 pb-24 確保底部留有足夠空間，避免被浮動工具列遮擋 -->
-  <main class="flex-1 overflow-auto grid-scroll p-2 sm:p-4 pb-24 bg-slate-100 flex flex-col">
+  <main class="flex-1 overflow-auto grid-scroll p-2 sm:p-4 bg-slate-100 flex flex-col">
     <div id="main-container" class="bg-white rounded-lg shadow-md border border-slate-300 overflow-hidden flex-1 flex flex-col min-w-[1000px]">
       
       <!-- Table Header & Body -->
@@ -106,183 +104,6 @@
 
   <!-- Selection Action Bar (Floating Footer) -->
   <div id="action-bar" class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 sm:px-5 py-2.5 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 translate-y-24 opacity-0 z-30 border border-slate-700 w-[90%] max-w-md justify-between sm:justify-start">
-    <div class="text-xs shrink-0">
-      已選取 <span id="selected-count" class="font-bold text-amber-400 text-sm">0</span> 格
-    </div>
-
-    <div class="h-4 w-[1px] bg-slate-700 hidden sm:block"></div>
-
-    <button id="open-booking-modal-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow">
-      <i class="fa-solid fa-pen-to-square"></i>
-      <span>填寫預約資料</span>
-    </button>
-
-    <button id="cancel-selection-btn" class="text-xs text-slate-400 hover:text-white px-2 py-1">
-      取消
-    </button>
-  </div>
-
-  <!-- Booking Modal -->
-  <div id="booking-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
-      <div class="p-4 bg-emerald-800 text-white flex items-center justify-between">
-        <h3 class="font-bold text-sm flex items-center gap-2">
-          <i class="fa-solid fa-calendar-check"></i>
-          <span id="modal-title">新增/編輯預約</span>
-        </h3>
-        <button id="close-modal-btn" class="text-emerald-200 hover:text-white">
-          <i class="fa-solid fa-xmark text-lg"></i>
-        </button>
-      </div>
-
-      <div class="p-5 space-y-4">
-        <div id="modal-slots-summary" class="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600 font-mono max-h-24 overflow-y-auto">
-          <!-- Slots List -->
-        </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">預約類型</label>
-          <div class="grid grid-cols-2 gap-2">
-            <button type="button" id="type-personal-btn" class="py-1.5 px-3 border border-emerald-600 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium text-center transition">
-              學員個人練習
-            這是在手機版 Chrome (以及 iOS Safari) 常見的 **100vh Viewport 算高與底部工具欄遮擋** 問題[cite: 1]。
-
-主要問題點出在：
-1. `body` 使用了 `h-screen` (`height: 100vh`)[cite: 1]。手機瀏覽器網址列與底部工具欄展開時，`100vh` 會比實際可視區域還要高，導致最後一行被遮住[cite: 1]。
-2. 底部浮動列 `#action-bar` 使用了 `fixed bottom-4`[cite: 1]，在手機瀏覽器下滑或工具欄出現時會直接被邊界截斷或被瀏覽器工具列遮住[cite: 1]。
-
----
-
-### 💡 核心修復方法
-
-1. **修正容器高度（動態高度支持）：**
-   - 將 `body` 的 `h-screen` 改為 `h-[100dvh]` (Dynamic Viewport Height)，自動扣除手機瀏覽器的控制列高度[cite: 1]。
-   - 加上 `pb-20`（或 Safe Area padding），為底部留出足夠的避讓空間[cite: 1]。
-2. **手機版專屬 Padding 修正：**
-   - 將 `<main>` 的 `overflow-auto` 改為可順暢滾動，並針對手機模式卡片列表加上底部的安全距離[cite: 1]。
-
----
-
-### 🛠️ 完整的修正後 `index.html` 程式碼
-
-請將原始程式碼替換為以下完整的修正版本：
-
-```html
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>羽球場個人練習與預約統計系統</title>
-  <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-  <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css)">
-  <style>
-    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap)');
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-    
-    /* Custom Scrollbar */
-    .grid-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-    .grid-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
-    .grid-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .grid-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    /* Sticky Columns and Headers */
-    .sticky-col { position: sticky; left: 0; z-index: 20; }
-    .sticky-header { position: sticky; top: 0; z-index: 10; }
-
-    /* 支援 iOS 與 Android Safe Area */
-    .pb-safe {
-      padding-bottom: env(safe-area-inset-bottom, 1rem);
-    }
-    .bottom-safe {
-      bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-    }
-  </style>
-</head>
-<!-- 修復：使用 h-[100dvh] 解決手機 Chrome 100vh 遮檔問題 -->
-<body class="bg-slate-100 text-slate-800 h-screen h-[100dvh] flex flex-col overflow-hidden">
-
-  <!-- Header -->
-  <header class="bg-emerald-800 text-white px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between shadow-md shrink-0 gap-2">
-    <div class="flex items-center space-x-2.5">
-      <div class="bg-emerald-600 p-1.5 rounded-lg flex items-center justify-center shrink-0">
-        <i class="fa-solid fa-table text-lg text-emerald-100"></i>
-      </div>
-      <div>
-        <h1 class="font-bold text-sm sm:text-base leading-tight flex items-center gap-1.5">
-          <span>羽球場預約統計系統</span>
-          <span id="mode-badge" class="text-[10px] bg-emerald-700/80 text-emerald-200 px-1.5 py-0.5 rounded font-normal border border-emerald-600">Excel 模式</span>
-        </h1>
-        <p class="text-[10px] sm:text-[11px] text-emerald-200">格式對齊：Y 軸場地 / X 軸時間段 (07:00 ~ 21:00)</p>
-      </div>
-    </div>
-
-    <!-- Right Controls -->
-    <div class="flex items-center space-x-1.5 sm:space-x-2 text-xs">
-      <!-- Mode Toggle Button -->
-      <button id="toggle-view-mode-btn" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2.5 py-1 rounded-lg text-xs transition shadow-sm flex items-center gap-1 shrink-0">
-        <i id="mode-icon" class="fa-solid fa-mobile-screen-button"></i>
-        <span id="mode-text">切換手機模式</span>
-      </button>
-
-      <div class="flex items-center bg-emerald-900/60 rounded-lg p-0.5 border border-emerald-700">
-        <button id="prev-day-btn" class="px-2 py-1 rounded hover:bg-emerald-700 transition text-emerald-200 hover:text-white" title="前一天">
-          <i class="fa-solid fa-chevron-left text-xs"></i>
-        </button>
-        <input type="date" id="date-picker" class="bg-transparent text-white text-xs px-1 py-0.5 focus:outline-none cursor-pointer font-medium w-24 sm:w-auto">
-        <button id="next-day-btn" class="px-2 py-1 rounded hover:bg-emerald-700 transition text-emerald-200 hover:text-white" title="後一天">
-          <i class="fa-solid fa-chevron-right text-xs"></i>
-        </button>
-      </div>
-
-      <button id="today-btn" class="hidden sm:inline-block bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-xs font-medium transition shadow-sm border border-emerald-600">
-        回到今日
-      </button>
-
-      <button id="clear-day-btn" class="bg-rose-700/80 hover:bg-rose-600 text-white px-2 py-1 rounded-lg text-xs font-medium transition shadow-sm border border-rose-600/50" title="清空當日">
-        <i class="fa-solid fa-trash-can"></i><span class="hidden sm:inline ml-1">清空當日</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- Quick Date Tabs Bar (Excel Sheet Style) -->
-  <nav class="bg-slate-200 border-b border-slate-300 px-2 py-1 flex items-center gap-1 overflow-x-auto text-xs shrink-0" id="date-tabs-bar">
-    <!-- JS Rendered Tabs -->
-  </nav>
-
-  <!-- Super Eye-Catching Event Header Notice Banner -->
-  <div class="bg-indigo-950 text-white px-3 sm:px-4 py-1.5 border-b border-indigo-900 flex items-center justify-between gap-2.5 shrink-0 shadow-inner">
-    <div class="flex items-center gap-2 flex-1">
-      <div class="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded text-[10px] sm:text-[11px] tracking-wider flex items-center gap-1 shrink-0 uppercase shadow">
-        <i class="fa-solid fa-trophy"></i>
-        <span>今日賽事/活動</span>
-      </div>
-      <div class="relative flex-1 max-w-md">
-        <input type="text" id="day-event-title" placeholder="點擊設定活動標記 (如：摩亞盃...)" class="w-full bg-indigo-900/80 hover:bg-indigo-900 text-amber-300 font-extrabold text-xs sm:text-sm px-2.5 py-1 rounded border border-amber-400/50 focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400/30 transition placeholder-indigo-300/60 tracking-wide">
-      </div>
-    </div>
-
-    <div class="hidden sm:flex items-center gap-3 text-[11px] font-medium text-indigo-200 shrink-0 border-l border-indigo-800/80 pl-3">
-      <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-emerald-100 border border-emerald-400 inline-block shadow-sm"></span> 個練預約</span>
-      <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block shadow-sm"></span> 社團包場</span>
-      <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-white border border-slate-300 inline-block shadow-sm"></span> 空白可選</span>
-    </div>
-  </div>
-
-  <!-- 修復：在 main 底部加上 pb-20 安全補白，避免內容被浮動列或手機控制列遮擋 -->
-  <main class="flex-1 overflow-y-auto overflow-x-auto grid-scroll p-2 sm:p-4 pb-20 sm:pb-4 bg-slate-100 flex flex-col">
-    <div id="main-container" class="bg-white rounded-lg shadow-md border border-slate-300 overflow-hidden flex-1 flex flex-col min-w-[1000px]">
-      
-      <!-- Table Header & Body -->
-      <div id="grid-table" class="divide-y divide-slate-200 flex-1 flex flex-col">
-        <!-- JS Dynamic Table Construction -->
-      </div>
-
-    </div>
-  </main>
-
-  <!-- Selection Action Bar (Floating Footer) - 修復：加上 bottom-safe 保障底部 Safe Area -->
-  <div id="action-bar" class="fixed bottom-safe left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 sm:px-5 py-2.5 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 translate-y-32 opacity-0 z-30 border border-slate-700 w-[90%] max-w-md justify-between sm:justify-start">
     <div class="text-xs shrink-0">
       已選取 <span id="selected-count" class="font-bold text-amber-400 text-sm">0</span> 格
     </div>
@@ -463,8 +284,8 @@
         modeBadge.innerText = '手機清單模式';
         modeBadge.className = 'text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-medium border border-amber-500/40';
         
-        mainContainer.className = 'bg-transparent rounded-none shadow-none border-none overflow-visible w-full min-w-0';
-        gridTable.className = 'block space-y-3 pb-8';
+        mainContainer.className = 'bg-transparent rounded-none shadow-none border-none overflow-visible w-full';
+        gridTable.className = 'block space-y-3';
       } else {
         modeIcon.className = 'fa-solid fa-mobile-screen-button';
         modeText.innerText = '切換手機模式';
@@ -663,9 +484,9 @@
     function updateActionBar() {
       if (selectedCells.size > 0) {
         selectedCountEl.innerText = selectedCells.size;
-        actionBar.classList.remove('translate-y-32', 'opacity-0');
+        actionBar.classList.remove('translate-y-24', 'opacity-0');
       } else {
-        actionBar.classList.add('translate-y-32', 'opacity-0');
+        actionBar.classList.add('translate-y-24', 'opacity-0');
       }
     }
 
