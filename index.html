@@ -38,7 +38,7 @@
               ⏳ 連線雲端中...
             </span>
           </div>
-          <p class="text-xs text-slate-500">支援 PDF 匯入重組 • Firestore 跨裝置同步</p>
+          <p class="text-xs text-slate-500">支援 PDF 匯入重組 • 可調式語速 • Firestore 同步</p>
         </div>
       </div>
 
@@ -46,7 +46,7 @@
         <!-- 雲端講稿選擇器 -->
         <div class="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">
           <span class="text-xs font-bold text-indigo-700">📚 講稿庫：</span>
-          <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-indigo-900 focus:outline-none max-w-[160px]">
+          <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-indigo-900 focus:outline-none max-w-[150px]">
             <option value="default">預設範例 (11/13)</option>
           </select>
           <button id="deleteCloudBtn" onclick="deleteCurrentCloudScript()" class="hidden text-xs text-rose-500 hover:text-rose-700 px-1 font-bold" title="刪除此雲端講稿（需管理密碼）">
@@ -55,9 +55,25 @@
         </div>
 
         <!-- 語音選擇 -->
-        <select id="voiceSelect" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none focus:border-sky-400">
+        <select id="voiceSelect" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2 py-2 text-slate-700 focus:outline-none focus:border-sky-400 max-w-[140px]">
           <option value="">載入語音中...</option>
         </select>
+
+        <!-- 全域語速調整滑桿 -->
+        <div class="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5" title="調整標準播放與連續播放的語速">
+          <span class="text-xs font-bold text-slate-600">🎚️ 語速</span>
+          <input
+            type="range"
+            id="globalRateSlider"
+            min="0.5"
+            max="1.5"
+            step="0.05"
+            value="1.0"
+            oninput="updateGlobalRate(this.value)"
+            class="w-16 accent-sky-600 cursor-pointer"
+          />
+          <span id="globalRateLabel" class="text-xs font-mono font-bold text-sky-700 w-9 text-right">1.0x</span>
+        </div>
 
         <!-- 連續播放 -->
         <button id="playAllBtn" onclick="togglePlayAll()" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 text-amber-950 font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition">
@@ -106,7 +122,7 @@
           </button>
         </div>
         <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-          點擊句子右側按鈕聆聽標準發音，或於空格輸入單字造句
+          點擊句子右側按鈕聆聽發音，可自由切換慢速跟讀倍率或調整上方語速滑桿
         </p>
       </div>
       <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
@@ -121,7 +137,7 @@
     <div id="scriptContainer" class="space-y-6"></div>
   </main>
 
-  <!-- 管理員密碼驗證彈窗（每次儲存/刪除皆需手動輸入） -->
+  <!-- 管理員密碼驗證彈窗 -->
   <div id="adminAuthModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-6">
       <div class="flex items-center gap-2.5 mb-2">
@@ -183,7 +199,6 @@
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    // 每次執行儲存或刪除時，皆彈出密碼視窗要求手動輸入（不快取、不預設填入）
     function promptAdminPassword(actionDescription) {
       return new Promise((resolve) => {
         const modal = document.getElementById('adminAuthModal');
@@ -235,7 +250,36 @@
     }
 
     // =========================================================================
-    // 2. 預設範本與主題插圖生成器
+    // 2. 語速狀態管理（全域語速 + 可調式慢速跟讀倍率）
+    // =========================================================================
+    let globalSpeechRate = parseFloat(localStorage.getItem('speaking_club_global_rate')) || 1.0;
+    let slowSpeechRate = parseFloat(localStorage.getItem('speaking_club_slow_rate')) || 0.7;
+
+    // 初始化頂部滑桿顯示
+    const sliderEl = document.getElementById('globalRateSlider');
+    const labelEl = document.getElementById('globalRateLabel');
+    if (sliderEl && labelEl) {
+      sliderEl.value = globalSpeechRate;
+      labelEl.textContent = `${globalSpeechRate.toFixed(2).replace(/\.00$/, '.0')}x`;
+    }
+
+    window.updateGlobalRate = function(val) {
+      globalSpeechRate = parseFloat(val);
+      localStorage.setItem('speaking_club_global_rate', globalSpeechRate);
+      document.getElementById('globalRateLabel').textContent = `${globalSpeechRate.toFixed(2).replace(/\.00$/, '.0')}x`;
+    };
+
+    window.updateSlowRate = function(val) {
+      slowSpeechRate = parseFloat(val);
+      localStorage.setItem('speaking_club_slow_rate', slowSpeechRate);
+      // 同步更新畫面上所有慢速下拉選單
+      document.querySelectorAll('.slow-rate-select').forEach(sel => {
+        sel.value = slowSpeechRate.toString();
+      });
+    };
+
+    // =========================================================================
+    // 3. 預設範本與主題插圖生成器
     // =========================================================================
     function getIllustrationSvg(keywordText, fallbackIdx = 0) {
       const text = (keywordText || '').toLowerCase();
@@ -384,7 +428,7 @@
     }
 
     // =========================================================================
-    // 3. Firestore 讀寫與刪除邏輯（每次皆要求輸入密碼並交由 Firestore Rules 驗證）
+    // 4. Firestore 讀寫與刪除邏輯
     // =========================================================================
     async function fetchCloudScripts(selectIdAfterLoad = null) {
       const statusBadge = document.getElementById('cloudStatus');
@@ -443,7 +487,6 @@
     };
 
     window.saveScriptToFirestore = async function() {
-      // 1. 每次儲存皆彈出密碼視窗要求手動輸入
       const enteredPassword = await promptAdminPassword(`儲存講稿「${currentScript.title}」至雲端`);
       if (!enteredPassword) return;
 
@@ -462,7 +505,6 @@
           items: sec.items
         }));
 
-        // 2. 將使用者輸入的密碼帶入 adminKey，由 Firestore 安全規則驗證是否為 8888
         const payload = {
           adminKey: enteredPassword,
           title: currentScript.title || "English Speaking Script",
@@ -502,13 +544,11 @@
     window.deleteCurrentCloudScript = async function() {
       if (!currentScript.id || currentScript.id === 'default') return;
 
-      // 1. 每次刪除皆彈出密碼視窗要求手動輸入
       const enteredPassword = await promptAdminPassword(`從雲端刪除「${currentScript.title}」`);
       if (!enteredPassword) return;
 
       const docRef = doc(db, COLLECTION_NAME, currentScript.id);
       try {
-        // 2. 先以輸入的密碼更新 adminKey（若密碼錯誤，Firestore 安全規則在此步驟即會擋下；若為舊資料且密碼正確，則可順利補上金鑰並執行刪除）
         await setDoc(docRef, { adminKey: enteredPassword }, { merge: true });
         await deleteDoc(docRef);
 
@@ -541,7 +581,7 @@
     };
 
     // =========================================================================
-    // 4. 語音合成引擎 (Web Speech API)
+    // 5. 語音合成引擎 (Web Speech API - 支援自訂語速)
     // =========================================================================
     function loadVoices() {
       voices = window.speechSynthesis.getVoices();
@@ -563,7 +603,8 @@
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
 
-    window.speakText = function(text, rate = 1.0, elementId = null, onEndCallback = null) {
+    // rateMode: 'global' 使用上方全域滑桿語速, 'slow' 使用可調式慢速倍率, 或直接傳入數字
+    window.speakText = function(text, rateMode = 'global', elementId = null, onEndCallback = null) {
       window.speechSynthesis.cancel();
       document.querySelectorAll('.speaking-active').forEach(el => el.classList.remove('speaking-active'));
 
@@ -572,13 +613,20 @@
         if (el) el.classList.add('speaking-active');
       }
 
+      let finalRate = globalSpeechRate;
+      if (rateMode === 'slow') {
+        finalRate = slowSpeechRate;
+      } else if (typeof rateMode === 'number') {
+        finalRate = rateMode;
+      }
+
       const cleanSpeech = text.replace(/^Ex:\s*/i, 'Example: ');
       const utterance = new SpeechSynthesisUtterance(cleanSpeech);
       const selectedVoiceName = document.getElementById('voiceSelect').value;
       const chosenVoice = voices.find(v => v.name === selectedVoiceName);
       if (chosenVoice) utterance.voice = chosenVoice;
       utterance.lang = 'en-US';
-      utterance.rate = rate;
+      utterance.rate = finalRate;
 
       utterance.onend = () => {
         if (elementId) {
@@ -591,7 +639,7 @@
       window.speechSynthesis.speak(utterance);
     };
 
-    window.speakTemplate = function(secIdx, itemIdx, rate = 1.0) {
+    window.speakTemplate = function(secIdx, itemIdx, rateMode = 'global') {
       const item = currentScript.sections[secIdx].items[itemIdx];
       let fullSentence = '';
       item.templateEn.forEach((part, i) => {
@@ -601,7 +649,7 @@
           fullSentence += inputVal || item.placeholders[i];
         }
       });
-      window.speakText(fullSentence, rate, `row-${secIdx}-${itemIdx}`);
+      window.speakText(fullSentence, rateMode, `row-${secIdx}-${itemIdx}`);
     };
 
     window.togglePlayAll = function() {
@@ -645,7 +693,7 @@
           return;
         }
         const current = allSentences[playQueueIndex++];
-        window.speakText(current.text, 0.95, current.id, () => {
+        window.speakText(current.text, 'global', current.id, () => {
           setTimeout(playNext, 450);
         });
       }
@@ -653,7 +701,7 @@
     };
 
     // =========================================================================
-    // 5. 句型編輯與畫面渲染
+    // 6. 句型編輯與畫面渲染（含可調式慢速按鈕組）
     // =========================================================================
     window.mergeWithPrevious = function(secIdx, itemIdx) {
       if (itemIdx <= 0) return;
@@ -681,6 +729,25 @@
       currentScript.sections[secIdx].items[itemIdx] = buildSentenceItem(newEn.trim(), (newZh || '').trim(), item.isAnswer);
       renderScript(currentScript);
     };
+
+    // 產生可調式慢速按鈕組 HTML（點擊 🐢 播放慢速，旁邊下拉可切換 0.5x ~ 0.9x）
+    function renderSlowControlHtml(onClickCode) {
+      const rates = [0.5, 0.6, 0.7, 0.8, 0.9];
+      const optionsHtml = rates
+        .map(r => `<option value="${r}" ${r === slowSpeechRate ? 'selected' : ''}>${r}x</option>`)
+        .join('');
+
+      return `
+        <div class="inline-flex items-center bg-slate-200 hover:bg-slate-300/80 rounded-lg overflow-hidden transition" title="可調整慢速跟讀倍率">
+          <button onclick="${onClickCode}" class="pl-2.5 pr-1.5 py-1.5 text-slate-700 text-xs font-bold flex items-center gap-1">
+            🐢
+          </button>
+          <select onchange="updateSlowRate(this.value)" class="slow-rate-select bg-transparent pr-2 py-1.5 text-slate-700 text-xs font-bold focus:outline-none cursor-pointer">
+            ${optionsHtml}
+          </select>
+        </div>
+      `;
+    }
 
     function renderScript(data) {
       currentScript = data;
@@ -748,12 +815,10 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="speakTemplate(${sIdx}, ${iIdx}, 1.0)" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+                  <button onclick="speakTemplate(${sIdx}, ${iIdx}, 'global')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
                     🔊 朗讀
                   </button>
-                  <button onclick="speakTemplate(${sIdx}, ${iIdx}, 0.7)" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition" title="慢速跟讀">
-                    🐢 0.7x
-                  </button>
+                  ${renderSlowControlHtml(`speakTemplate(${sIdx}, ${iIdx}, 'slow')`)}
                 </div>
               </div>
             `;
@@ -773,9 +838,10 @@
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="speakText('${safeText}', 1.0, '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
+                  <button onclick="speakText('${safeText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
                     🔊 播放
                   </button>
+                  ${renderSlowControlHtml(`speakText('${safeText}', 'slow', '${rowId}')`)}
                 </div>
               </div>
             `;
@@ -792,12 +858,10 @@
                 </div>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
-                <button onclick="speakText('${safeText}', 1.0, '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+                <button onclick="speakText('${safeText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
                   🔊 播放
                 </button>
-                <button onclick="speakText('${safeText}', 0.7, '${rowId}')" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition" title="慢速跟讀">
-                  🐢 0.7x
-                </button>
+                ${renderSlowControlHtml(`speakText('${safeText}', 'slow', '${rowId}')`)}
               </div>
             </div>
           `;
@@ -818,7 +882,7 @@
                 <h3 class="en-font text-xl font-bold ${theme.title} flex items-center gap-2">
                   <span>${sec.icon}</span> ${sec.titleEn}
                 </h3>
-                <button onclick="speakText('${sec.titleEn.replace(/'/g, "\\'")}', 1.0)" class="text-xs text-slate-400 hover:text-sky-600 font-medium">
+                <button onclick="speakText('${sec.titleEn.replace(/'/g, "\\'")}', 'global')" class="text-xs text-slate-400 hover:text-sky-600 font-medium">
                   🔊 唸標題
                 </button>
               </div>
@@ -833,7 +897,7 @@
     }
 
     // =========================================================================
-    // 6. PDF 座標級解析與跨行智慧斷句重組
+    // 7. PDF 座標級解析與跨行智慧斷句重組
     // =========================================================================
     window.handlePdfUpload = async function(event) {
       const file = event.target.files[0];
