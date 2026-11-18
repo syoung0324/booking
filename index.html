@@ -255,7 +255,6 @@
     let globalSpeechRate = parseFloat(localStorage.getItem('speaking_club_global_rate')) || 1.0;
     let slowSpeechRate = parseFloat(localStorage.getItem('speaking_club_slow_rate')) || 0.7;
 
-    // 初始化頂部滑桿顯示
     const sliderEl = document.getElementById('globalRateSlider');
     const labelEl = document.getElementById('globalRateLabel');
     if (sliderEl && labelEl) {
@@ -272,7 +271,6 @@
     window.updateSlowRate = function(val) {
       slowSpeechRate = parseFloat(val);
       localStorage.setItem('speaking_club_slow_rate', slowSpeechRate);
-      // 同步更新畫面上所有慢速下拉選單
       document.querySelectorAll('.slow-rate-select').forEach(sel => {
         sel.value = slowSpeechRate.toString();
       });
@@ -603,7 +601,6 @@
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
 
-    // rateMode: 'global' 使用上方全域滑桿語速, 'slow' 使用可調式慢速倍率, 或直接傳入數字
     window.speakText = function(text, rateMode = 'global', elementId = null, onEndCallback = null) {
       window.speechSynthesis.cancel();
       document.querySelectorAll('.speaking-active').forEach(el => el.classList.remove('speaking-active'));
@@ -701,7 +698,7 @@
     };
 
     // =========================================================================
-    // 6. 句型編輯與畫面渲染（含可調式慢速按鈕組）
+    // 6. 句型編輯與畫面渲染（烏龜播放鈕與倍率選單分離為兩個獨立欄位）
     // =========================================================================
     window.mergeWithPrevious = function(secIdx, itemIdx) {
       if (itemIdx <= 0) return;
@@ -730,7 +727,7 @@
       renderScript(currentScript);
     };
 
-    // 產生可調式慢速按鈕組 HTML（點擊 🐢 播放慢速，旁邊下拉可切換 0.5x ~ 0.9x）
+    // 獨立分成兩個元件：1. 烏龜慢速播放按鈕  2. 語速倍率下拉選單
     function renderSlowControlHtml(onClickCode) {
       const rates = [0.5, 0.6, 0.7, 0.8, 0.9];
       const optionsHtml = rates
@@ -738,14 +735,12 @@
         .join('');
 
       return `
-        <div class="inline-flex items-center bg-slate-200 hover:bg-slate-300/80 rounded-lg overflow-hidden transition" title="可調整慢速跟讀倍率">
-          <button onclick="${onClickCode}" class="pl-2.5 pr-1.5 py-1.5 text-slate-700 text-xs font-bold flex items-center gap-1">
-            🐢
-          </button>
-          <select onchange="updateSlowRate(this.value)" class="slow-rate-select bg-transparent pr-2 py-1.5 text-slate-700 text-xs font-bold focus:outline-none cursor-pointer">
-            ${optionsHtml}
-          </select>
-        </div>
+        <button onclick="${onClickCode}" class="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs font-bold rounded-lg flex items-center gap-1 transition" title="以慢速倍率朗讀">
+          🐢 慢速
+        </button>
+        <select onchange="updateSlowRate(this.value)" aria-label="慢速跟讀倍率" class="slow-rate-select px-2 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-bold rounded-lg focus:outline-none focus:border-sky-400 cursor-pointer" title="選擇慢速語速倍率">
+          ${optionsHtml}
+        </select>
       `;
     }
 
@@ -814,7 +809,7 @@
                     ${toolBtns}
                   </div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-2 shrink-0">
                   <button onclick="speakTemplate(${sIdx}, ${iIdx}, 'global')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
                     🔊 朗讀
                   </button>
@@ -837,7 +832,7 @@
                     ${item.zh ? `<span class="text-xs text-emerald-600 ml-2">${item.zh}</span>` : ''}
                   </div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-2 shrink-0">
                   <button onclick="speakText('${safeText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
                     🔊 播放
                   </button>
@@ -857,7 +852,7 @@
                   ${toolBtns}
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
+              <div class="flex items-center gap-2 shrink-0">
                 <button onclick="speakText('${safeText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
                   🔊 播放
                 </button>
