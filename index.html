@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speaking Club 圖文有聲口說講稿</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 PDF.js 以支援前端直接解析匯入的 PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background-color: #f0f7ff;
+    }
+    .en-font {
+      font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+      letter-spacing: 0.02em;
+    }
+    .speaking-active {
+      background-color: #fef08a !important;
+      border-color: #eab308 !important;
+      transform: scale(1.01);
+      transition: all 0.2s ease;
+    }
+  </style>
+</head>
+<body class="text-slate-800 pb-16">
+
+  <!-- 頂部控制列 -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-sky-100 shadow-sm">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <span class="text-3xl">🎙️</span>
+        <div>
+          <h1 class="text-lg font-bold text-sky-900 leading-tight">英文口說圖文有聲講稿</h1>
+          <p class="text-xs text-slate-500">點擊句子旁的喇叭即可聆聽發音，或匯入新 PDF</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- 語音選擇 -->
+        <select id="voiceSelect" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 focus:outline-none focus:border-sky-400">
+          <option value="">載入語音中...</option>
+        </select>
+
+        <!-- 全部連續播放 -->
+        <button id="playAllBtn" onclick="togglePlayAll()" class="flex items-center gap-1.5 bg-amber-400 hover:bg-amber-500 text-amber-950 font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm transition">
+          <span>▶️</span> 連續播放全部
+        </button>
+
+        <!-- 匯入 PDF 按鈕 -->
+        <label class="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm cursor-pointer transition">
+          <span>📄</span> 匯入 PDF
+          <input type="file" id="pdfUpload" accept="application/pdf" class="hidden" onchange="handlePdfUpload(event)" />
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主內容區 -->
+  <main class="max-w-4xl mx-auto px-4 mt-6">
+    <!-- 活動資訊橫幅 -->
+    <div id="bannerCard" class="bg-gradient-to-r from-sky-500 to-indigo-600 rounded-2xl p-6 text-white shadow-md mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div>
+        <div class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full mb-2">
+          線上口說練習講稿
+        </div>
+        <h2 id="docTitle" class="en-font text-2xl md:text-3xl font-bold tracking-wide">
+          Speaking Club 11/13 8pm
+        </h2>
+        <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
+          Google Meet 線上課程互動講義 • 點擊下方卡片練習發音
+        </p>
+      </div>
+      <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
+        <div class="text-xs text-sky-100 mb-1">Google Meet 教室連結：</div>
+        <a href="https://meet.google.com/ppf-tncw-krk" target="_blank" class="font-mono font-bold underline hover:text-amber-200 break-all">
+          meet.google.com/ppf-tncw-krk
+        </a>
+      </div>
+    </div>
+
+    <!-- 講稿卡片容器 -->
+    <div id="scriptContainer" class="space-y-6"></div>
+  </main>
+
+  <script>
+    // 設定 PDF.js Worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // 預設資料（來自上傳的 13.pdf 內容）
+    const defaultScriptData = {
+      title: "Speaking Club 11/13 8pm",
+      meetUrl: "https://meet.google.com/ppf-tncw-krk",
+      sections: [
+        {
+          part: "Part 1",
+          titleEn: "Mystery Object: Show & Guess",
+          titleZh: "給提示猜物品",
+          icon: "🔍",
+          color: "emerald",
+          illustrationSvg: `
+            <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
+              <rect x="10" y="10" width="100" height="100" rx="20" fill="#d1fae5"/>
+              <!-- 鉛筆插圖 -->
+              <g transform="rotate(-35 60 60)">
+                <rect x="52" y="25" width="16" height="58" rx="2" fill="#facc15" stroke="#ca8a04" stroke-width="2"/>
+                <rect x="52" y="20" width="16" height="8" rx="2" fill="#f472b6" stroke="#db2777" stroke-width="2"/>
+                <polygon points="52,83 68,83 60,98" fill="#fde68a" stroke="#ca8a04" stroke-width="2"/>
+                <polygon points="58,93 62,93 60,98" fill="#1e293b"/>
+              </g>
+              <text x="82" y="42" font-size="22" font-weight="bold" fill="#059669">?</text>
+            </svg>
+          `,
+          items: [
+            { en: "Ex: It's yellow.", zh: "範例：它是黃色的。", hint: "顏色提示" },
+            { en: "It's long.", zh: "它是長長的。", hint: "形狀提示" },
+            { en: "I use it to write.", zh: "我用它來寫字。", hint: "功能提示" },
+            { en: "What is it?", zh: "它是什麼呢？", hint: "提問句" },
+            { en: "A pencil!", zh: "是一支鉛筆！", isAnswer: true }
+          ]
+        },
+        {
+          part: "Part 2",
+          titleEn: "My Dream Dinner Challenge",
+          titleZh: "畫出你的夢想晚餐",
+          icon: "🍽️",
+          color: "amber",
+          illustrationSvg: `
+            <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
+              <rect x="10" y="10" width="100" height="100" rx="20" fill="#fef3c7"/>
+              <circle cx="60" cy="62" r="32" fill="#ffffff" stroke="#f59e0b" stroke-width="3"/>
+              <circle cx="60" cy="62" r="24" fill="none" stroke="#fde68a" stroke-width="2" stroke-dasharray="4 3"/>
+              <circle cx="52" cy="56" r="8" fill="#ef4444"/>
+              <path d="M62 66 Q72 52 76 68 Z" fill="#22c55e"/>
+              <rect x="48" y="68" width="16" height="6" rx="3" fill="#f97316"/>
+            </svg>
+          `,
+          items: [
+            {
+              templateEn: ["For dinner, I have ", " and ", "."],
+              placeholders: ["pizza", "salad"],
+              zh: "晚餐我吃（食物1）和（食物2）。"
+            },
+            {
+              templateEn: ["I like ", "."],
+              placeholders: ["corn soup"],
+              zh: "我喜歡（某食物）。"
+            },
+            {
+              templateEn: ["I don't like ", "."],
+              placeholders: ["carrots"],
+              zh: "我不喜歡（某食物）。"
+            }
+          ]
+        },
+        {
+          part: "Part 3",
+          titleEn: "Bigger Numbers!",
+          titleZh: "聽句子，寫出比較大的數字",
+          icon: "🔢",
+          color: "sky",
+          illustrationSvg: `
+            <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
+              <rect x="10" y="10" width="100" height="100" rx="20" fill="#e0f2fe"/>
+              <rect x="22" y="45" width="32" height="36" rx="8" fill="#bae6fd" stroke="#0284c7" stroke-width="2"/>
+              <text x="38" y="69" text-anchor="middle" font-size="16" font-weight="bold" fill="#0369a1">28</text>
+              <rect x="64" y="32" width="36" height="49" rx="8" fill="#0284c7"/>
+              <text x="82" y="63" text-anchor="middle" font-size="20" font-weight="bold" fill="#ffffff">45</text>
+              <text x="58" y="35" text-anchor="middle" font-size="14" font-weight="bold" fill="#0284c7">&lt;</text>
+            </svg>
+          `,
+          items: [
+            { en: "Listen carefully to the sentences and write down the bigger number!", zh: "仔細聽老師唸的句子，寫下比較大的那個數字！" }
+          ]
+        },
+        {
+          part: "Part 4",
+          titleEn: "Number Bingo: 26–51",
+          titleZh: "數字賓果遊戲（26 到 51）",
+          icon: "🎯",
+          color: "purple",
+          illustrationSvg: `
+            <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
+              <rect x="10" y="10" width="100" height="100" rx="20" fill="#f3e8ff"/>
+              <g transform="translate(25, 25)">
+                <rect x="0" y="0" width="70" height="70" rx="6" fill="#ffffff" stroke="#9333ea" stroke-width="2"/>
+                <line x1="23" y1="0" x2="23" y2="70" stroke="#d8b4fe" stroke-width="2"/>
+                <line x1="47" y1="0" x2="47" y2="70" stroke="#d8b4fe" stroke-width="2"/>
+                <line x1="0" y1="23" x2="70" y2="23" stroke="#d8b4fe" stroke-width="2"/>
+                <line x1="0" y1="47" x2="70" y2="47" stroke="#d8b4fe" stroke-width="2"/>
+                <line x1="5" y1="5" x2="65" y2="65" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
+                <circle cx="12" cy="12" r="5" fill="#facc15"/>
+                <circle cx="35" cy="35" r="5" fill="#facc15"/>
+                <circle cx="58" cy="58" r="5" fill="#facc15"/>
+              </g>
+            </svg>
+          `,
+          items: [
+            { en: "Draw a 5x5 grid and write 25 different numbers from 26 to 51.", zh: "畫出 5x5 方格，填入 26 到 51 之間 25 個不同的數字。" },
+            { en: "The teacher calls out the number.", zh: "老師唸出數字。" },
+            { en: "Cross out the numbers.", zh: "在賓果紙上畫掉聽到的數字。" },
+            { en: "You need to get 5 lines.", zh: "你需要連成五條線才算獲勝！" }
+          ]
+        }
+      ]
+    };
+
+    let currentScript = defaultScriptData;
+    let voices = [];
+    let isPlayingAll = false;
+    let playQueueIndex = 0;
+
+    // 初始化語音列表
+    function loadVoices() {
+      voices = window.speechSynthesis.getVoices();
+      const voiceSelect = document.getElementById('voiceSelect');
+      const enVoices = voices.filter(v => v.lang.startsWith('en'));
+      if (enVoices.length === 0) return;
+
+      voiceSelect.innerHTML = '';
+      enVoices.forEach((voice, idx) => {
+        const option = document.createElement('option');
+        option.value = voice.name;
+        option.textContent = `${voice.name.replace(/Microsoft |Google /g, '')} (${voice.lang})`;
+        if (voice.lang === 'en-US' && (voice.name.includes('Google') || voice.name.includes('Natural') || idx === 0)) {
+          option.selected = true;
+        }
+        voiceSelect.appendChild(option);
+      });
+    }
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
+
+    // 播放單句語音
+    function speakText(text, rate = 1.0, elementId = null, onEndCallback = null) {
+      window.speechSynthesis.cancel();
+      document.querySelectorAll('.speaking-active').forEach(el => el.classList.remove('speaking-active'));
+
+      if (elementId) {
+        const el = document.getElementById(elementId);
+        if (el) el.classList.add('speaking-active');
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      const selectedVoiceName = document.getElementById('voiceSelect').value;
+      const chosenVoice = voices.find(v => v.name === selectedVoiceName);
+      if (chosenVoice) utterance.voice = chosenVoice;
+      utterance.lang = 'en-US';
+      utterance.rate = rate;
+
+      utterance.onend = () => {
+        if (elementId) {
+          const el = document.getElementById(elementId);
+          if (el) el.classList.remove('speaking-active');
+        }
+        if (onEndCallback) onEndCallback();
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // 播放自訂填空句子
+    function speakTemplate(secIdx, itemIdx, rate = 1.0) {
+      const item = currentScript.sections[secIdx].items[itemIdx];
+      let fullSentence = '';
+      item.templateEn.forEach((part, i) => {
+        fullSentence += part;
+        if (i < item.placeholders.length) {
+          const inputVal = document.getElementById(`input-${secIdx}-${itemIdx}-${i}`).value.trim();
+          fullSentence += inputVal || item.placeholders[i];
+        }
+      });
+      speakText(fullSentence, rate, `row-${secIdx}-${itemIdx}`);
+    }
+
+    // 全部連續播放
+    function togglePlayAll() {
+      const btn = document.getElementById('playAllBtn');
+      if (isPlayingAll) {
+        isPlayingAll = false;
+        window.speechSynthesis.cancel();
+        document.querySelectorAll('.speaking-active').forEach(el => el.classList.remove('speaking-active'));
+        btn.innerHTML = '<span>▶️</span> 連續播放全部';
+        return;
+      }
+
+      const allSentences = [];
+      currentScript.sections.forEach((sec, sIdx) => {
+        allSentences.push({ text: `${sec.part}. ${sec.titleEn}`, id: null });
+        sec.items.forEach((item, iIdx) => {
+          if (item.en) {
+            allSentences.push({ text: item.en, id: `row-${sIdx}-${iIdx}` });
+          } else if (item.templateEn) {
+            let txt = '';
+            item.templateEn.forEach((part, pIdx) => {
+              txt += part;
+              if (pIdx < item.placeholders.length) {
+                const val = document.getElementById(`input-${sIdx}-${iIdx}-${pIdx}`)?.value.trim();
+                txt += val || item.placeholders[pIdx];
+              }
+            });
+            allSentences.push({ text: txt, id: `row-${sIdx}-${iIdx}` });
+          }
+        });
+      });
+
+      isPlayingAll = true;
+      playQueueIndex = 0;
+      btn.innerHTML = '<span>⏹️</span> 停止播放';
+
+      function playNext() {
+        if (!isPlayingAll || playQueueIndex >= allSentences.length) {
+          isPlayingAll = false;
+          btn.innerHTML = '<span>▶️</span> 連續播放全部';
+          return;
+        }
+        const current = allSentences[playQueueIndex++];
+        speakText(current.text, 0.95, current.id, () => {
+          setTimeout(playNext, 450);
+        });
+      }
+      playNext();
+    }
+
+    // 渲染畫面
+    function renderScript(data) {
+      currentScript = data;
+      document.getElementById('docTitle').textContent = data.title || 'English Speaking Script';
+      const meetBox = document.getElementById('meetLinkBox');
+      if (data.meetUrl) {
+        meetBox.classList.remove('hidden');
+        meetBox.querySelector('a').href = data.meetUrl;
+        meetBox.querySelector('a').textContent = data.meetUrl.replace('https://', '');
+      } else {
+        meetBox.classList.add('hidden');
+      }
+
+      const container = document.getElementById('scriptContainer');
+      container.innerHTML = '';
+
+      const colorMap = {
+        emerald: { badge: 'bg-emerald-100 text-emerald-800', border: 'border-emerald-200', title: 'text-emerald-900' },
+        amber:   { badge: 'bg-amber-100 text-amber-800',     border: 'border-amber-200',   title: 'text-amber-900' },
+        sky:     { badge: 'bg-sky-100 text-sky-800',         border: 'border-sky-200',     title: 'text-sky-900' },
+        purple:  { badge: 'bg-purple-100 text-purple-800',   border: 'border-purple-200',  title: 'text-purple-900' }
+      };
+
+      data.sections.forEach((sec, sIdx) => {
+        const theme = colorMap[sec.color] || colorMap.sky;
+        const card = document.createElement('section');
+        card.className = `bg-white rounded-2xl shadow-sm border ${theme.border} overflow-hidden`;
+
+        let itemsHtml = sec.items.map((item, iIdx) => {
+          const rowId = `row-${sIdx}-${iIdx}`;
+          // 填空互動句子
+          if (item.templateEn) {
+            let sentenceHtml = '';
+            item.templateEn.forEach((part, pIdx) => {
+              sentenceHtml += `<span>${part}</span>`;
+              if (pIdx < item.placeholders.length) {
+                sentenceHtml += `<input id="input-${sIdx}-${iIdx}-${pIdx}" type="text" placeholder="${item.placeholders[pIdx]}" class="mx-1 px-2.5 py-0.5 w-28 text-center font-bold text-indigo-700 bg-indigo-50 border-b-2 border-indigo-400 rounded focus:outline-none focus:bg-white" />`;
+              }
+            });
+
+            return `
+              <div id="${rowId}" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div class="en-font text-lg text-slate-800 font-medium flex flex-wrap items-center">${sentenceHtml}</div>
+                  ${item.zh ? `<div class="text-xs text-slate-500 mt-1">${item.zh}</div>` : ''}
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button onclick="speakTemplate(${sIdx}, ${iIdx}, 1.0)" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+                    🔊 朗讀
+                  </button>
+                  <button onclick="speakTemplate(${sIdx}, ${iIdx}, 0.7)" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition" title="慢速跟讀">
+                    🐢 0.7x
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
+          // 猜謎揭曉答案句子
+          if (item.isAnswer) {
+            const safeText = item.en.replace(/'/g, "\\'");
+            return `
+              <div id="${rowId}" class="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <button onclick="this.nextElementSibling.classList.toggle('blur-sm')" class="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-md font-bold">
+                    👀 點擊揭曉答案
+                  </button>
+                  <div class="blur-sm transition duration-200 select-none">
+                    <span class="en-font text-lg font-bold text-emerald-800">${item.en}</span>
+                    <span class="text-xs text-emerald-600 ml-2">${item.zh || ''}</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button onclick="speakText('${safeText}', 1.0, '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
+                    🔊 播放
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
+          // 一般句子
+          const safeText = item.en.replace(/'/g, "\\'");
+          return `
+            <div id="${rowId}" class="p-3.5 rounded-xl bg-slate-50 hover:bg-sky-50/50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition">
+              <div>
+                <div class="en-font text-lg text-slate-800 font-medium">${item.en}</div>
+                ${item.zh ? `<div class="text-xs text-slate-500 mt-0.5">${item.zh}</div>` : ''}
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button onclick="speakText('${safeText}', 1.0, '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+                  🔊 播放
+                </button>
+                <button onclick="speakText('${safeText}', 0.7, '${rowId}')" class="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition" title="慢速跟讀">
+                  🐢 0.7x
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        card.innerHTML = `
+          <div class="p-5 md:p-6 flex flex-col md:flex-row gap-5">
+            <!-- 左側圖文插畫卡片 -->
+            <div class="md:w-44 shrink-0 flex flex-col items-center justify-center text-center bg-slate-50/80 rounded-xl p-4 border border-slate-100">
+              <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${theme.badge} mb-2">
+                ${sec.part}
+              </span>
+              ${sec.illustrationSvg}
+              <div class="text-xs font-bold text-slate-500 mt-2">${sec.titleZh}</div>
+            </div>
+
+            <!-- 右側有聲講稿列表 -->
+            <div class="flex-1">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="en-font text-xl font-bold ${theme.title} flex items-center gap-2">
+                  <span>${sec.icon}</span> ${sec.titleEn}
+                </h3>
+                <button onclick="speakText('${sec.titleEn.replace(/'/g, "\\'")}', 1.0)" class="text-xs text-slate-400 hover:text-sky-600 font-medium">
+                  🔊 唸標題
+                </button>
+              </div>
+              <div class="space-y-2.5">
+                ${itemsHtml}
+              </div>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 解析上傳的 PDF 並自動轉換為圖文有聲講稿
+    async function handlePdfUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map(item => item.str);
+        fullText += strings.join('\n') + '\n';
+      }
+
+      parseTextToScript(fullText, file.name.replace('.pdf', ''));
+    }
+
+    // 將純文字智慧切分為段落與中英文句對
+    function parseTextToScript(rawText, fallbackTitle) {
+      const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const colors = ['emerald', 'amber', 'sky', 'purple'];
+      const icons = ['📘', '🗣️', '🎯', '🌟'];
+
+      let docTitle = fallbackTitle;
+      let meetUrl = '';
+      const sections = [];
+      let currentSec = null;
+
+      lines.forEach((line, idx) => {
+        if (idx === 0 && !line.startsWith('Part')) {
+          docTitle = line;
+          return;
+        }
+        const urlMatch = line.match(/https?:\/\/[^\s]+/);
+        if (urlMatch) {
+          meetUrl = urlMatch[0];
+          return;
+        }
+
+        // 偵測 Part 標題
+        const partMatch = line.match(/^(Part\s*\d+)\s*[|｜:]?\s*(.+)$/i);
+        if (partMatch) {
+          if (currentSec) sections.push(currentSec);
+          const secIdx = sections.length;
+          // 分離英文標題與中文副標
+          const zhMatch = partMatch[2].match(/([\u4e00-\u9fa5].*)$/);
+          const titleZh = zhMatch ? zhMatch[1] : '口說練習段落';
+          const titleEn = zhMatch ? partMatch[2].replace(zhMatch[1], '').trim() : partMatch[2];
+
+          currentSec = {
+            part: partMatch[1],
+            titleEn: titleEn || partMatch[1],
+            titleZh: titleZh,
+            icon: icons[secIdx % icons.length],
+            color: colors[secIdx % colors.length],
+            illustrationSvg: `
+              <div class="w-20 h-20 rounded-2xl bg-sky-100 flex items-center justify-center text-4xl mx-auto">
+                ${icons[secIdx % icons.length]}
+              </div>
+            `,
+            items: []
+          };
+          return;
+        }
+
+        if (!currentSec) {
+          currentSec = {
+            part: 'Section 1',
+            titleEn: 'Speaking Practice',
+            titleZh: '口說練習',
+            icon: '🗣️',
+            color: 'sky',
+            illustrationSvg: `<div class="w-20 h-20 rounded-2xl bg-sky-100 flex items-center justify-center text-4xl mx-auto">🗣️</div>`,
+            items: []
+          };
+        }
+
+        // 分離同一行中的英文與中文
+        const zhSplit = line.match(/^(.*?)([\u4e00-\u9fa5].*)$/);
+        if (zhSplit && zhSplit[1].trim()) {
+          currentSec.items.push({ en: zhSplit[1].trim(), zh: zhSplit[2].trim() });
+        } else if (/^[\u4e00-\u9fa5]/.test(line) && currentSec.items.length > 0) {
+          // 若整行是中文，附加到上一句英文的翻譯
+          const lastItem = currentSec.items[currentSec.items.length - 1];
+          lastItem.zh = lastItem.zh ? `${lastItem.zh} ${line}` : line;
+        } else {
+          currentSec.items.push({ en: line, zh: '' });
+        }
+      });
+
+      if (currentSec) sections.push(currentSec);
+      renderScript({ title: docTitle, meetUrl, sections });
+    }
+
+    // 初始渲染預設講稿
+    renderScript(defaultScriptData);
+  </script>
+</body>
+</html>
