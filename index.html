@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Speaking Club 圖文有聲口說講稿（Firestore 雲端版）</title>
+  <title>Speaking Club 圖文有聲口說講稿（Firestore 雲端保護版）</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
@@ -49,7 +49,7 @@
           <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-indigo-900 focus:outline-none max-w-[160px]">
             <option value="default">預設範例 (11/13)</option>
           </select>
-          <button id="deleteCloudBtn" onclick="deleteCurrentCloudScript()" class="hidden text-xs text-rose-500 hover:text-rose-700 px-1 font-bold" title="刪除此雲端講稿">
+          <button id="deleteCloudBtn" onclick="deleteCurrentCloudScript()" class="hidden text-xs text-rose-500 hover:text-rose-700 px-1 font-bold" title="刪除此雲端講稿（需管理密碼）">
             🗑️
           </button>
         </div>
@@ -121,6 +121,34 @@
     <div id="scriptContainer" class="space-y-6"></div>
   </main>
 
+  <!-- 管理員密碼驗證彈窗（每次儲存/刪除皆需手動輸入） -->
+  <div id="adminAuthModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-sm w-full p-6">
+      <div class="flex items-center gap-2.5 mb-2">
+        <span class="text-2xl">🔐</span>
+        <h3 class="text-lg font-bold text-slate-800">管理員權限驗證</h3>
+      </div>
+      <p id="adminAuthDesc" class="text-xs text-slate-500 mb-4">
+        為避免資料遭到更動，請輸入管理員密碼以繼續操作：
+      </p>
+      <input
+        type="password"
+        id="adminPasswordInput"
+        placeholder="請輸入管理密碼"
+        autocomplete="off"
+        class="w-full px-3.5 py-2.5 text-center text-lg tracking-widest font-bold border border-slate-300 rounded-xl focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200 mb-4"
+      />
+      <div class="flex items-center justify-end gap-2">
+        <button id="adminCancelBtn" type="button" class="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">
+          取消
+        </button>
+        <button id="adminConfirmBtn" type="button" class="px-4 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-lg shadow-sm transition">
+          確認送出
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
@@ -153,8 +181,58 @@
     const db = getFirestore(app);
     const COLLECTION_NAME = "speaking_club_scripts";
 
-    // 設定 PDF.js Worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // 每次執行儲存或刪除時，皆彈出密碼視窗要求手動輸入（不快取、不預設填入）
+    function promptAdminPassword(actionDescription) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('adminAuthModal');
+        const descEl = document.getElementById('adminAuthDesc');
+        const inputEl = document.getElementById('adminPasswordInput');
+        const cancelBtn = document.getElementById('adminCancelBtn');
+        const confirmBtn = document.getElementById('adminConfirmBtn');
+
+        descEl.textContent = `即將執行「${actionDescription}」，請輸入管理員密碼：`;
+        inputEl.value = '';
+        modal.classList.remove('hidden');
+        setTimeout(() => inputEl.focus(), 50);
+
+        function cleanup(result) {
+          modal.classList.add('hidden');
+          cancelBtn.removeEventListener('click', onCancel);
+          confirmBtn.removeEventListener('click', onConfirm);
+          inputEl.removeEventListener('keydown', onKeydown);
+          resolve(result);
+        }
+
+        function onCancel() {
+          cleanup(null);
+        }
+
+        function onConfirm() {
+          const val = inputEl.value.trim();
+          if (!val) {
+            inputEl.focus();
+            return;
+          }
+          cleanup(val);
+        }
+
+        function onKeydown(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onConfirm();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            onCancel();
+          }
+        }
+
+        cancelBtn.addEventListener('click', onCancel);
+        confirmBtn.addEventListener('click', onConfirm);
+        inputEl.addEventListener('keydown', onKeydown);
+      });
+    }
 
     // =========================================================================
     // 2. 預設範本與主題插圖生成器
@@ -306,7 +384,7 @@
     }
 
     // =========================================================================
-    // 3. Firestore 讀寫與刪除邏輯
+    // 3. Firestore 讀寫與刪除邏輯（每次皆要求輸入密碼並交由 Firestore Rules 驗證）
     // =========================================================================
     async function fetchCloudScripts(selectIdAfterLoad = null) {
       const statusBadge = document.getElementById('cloudStatus');
@@ -335,7 +413,6 @@
           selectEl.value = selectIdAfterLoad;
           loadSelectedScript(selectIdAfterLoad);
         } else if (!selectIdAfterLoad && savedScriptsMap.size > 0) {
-          // 預設自動載入最新一份雲端講稿
           const latestId = querySnapshot.docs[0].id;
           selectEl.value = latestId;
           loadSelectedScript(latestId);
@@ -344,7 +421,7 @@
         console.error("Firestore 讀取失敗:", err);
         statusBadge.textContent = "🔴 雲端連線異常";
         statusBadge.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800";
-        showToast(`⚠️ 無法讀取 Firestore（請確認資料庫安全規則允許讀寫）：${err.message}`, true);
+        showToast(`⚠️ 無法讀取 Firestore：${err.message}`, true);
       }
     }
 
@@ -366,13 +443,16 @@
     };
 
     window.saveScriptToFirestore = async function() {
+      // 1. 每次儲存皆彈出密碼視窗要求手動輸入
+      const enteredPassword = await promptAdminPassword(`儲存講稿「${currentScript.title}」至雲端`);
+      if (!enteredPassword) return;
+
       const saveBtn = document.getElementById('saveCloudBtn');
       const originalHtml = saveBtn.innerHTML;
       saveBtn.disabled = true;
-      saveBtn.innerHTML = '<span>⏳</span> 儲存中...';
+      saveBtn.innerHTML = '<span>⏳</span> 驗證並儲存中...';
 
       try {
-        // 整理乾淨的 JSON 結構存入 Firestore（移除大型 SVG 字串，載入時會自動依關鍵字生成）
         const cleanSections = currentScript.sections.map(sec => ({
           part: sec.part,
           titleEn: sec.titleEn,
@@ -382,7 +462,9 @@
           items: sec.items
         }));
 
+        // 2. 將使用者輸入的密碼帶入 adminKey，由 Firestore 安全規則驗證是否為 8888
         const payload = {
+          adminKey: enteredPassword,
           title: currentScript.title || "English Speaking Script",
           meetUrl: currentScript.meetUrl || "",
           sections: cleanSections,
@@ -392,7 +474,7 @@
         let savedId = currentScript.id;
         if (savedId && savedId !== 'default') {
           await setDoc(doc(db, COLLECTION_NAME, savedId), payload, { merge: true });
-          showToast(`✅ 已更新雲端講稿：「${payload.title}」`);
+          showToast(`✅ 密碼驗證通過，已更新雲端講稿：「${payload.title}」`);
         } else {
           const docRef = await addDoc(collection(db, COLLECTION_NAME), {
             ...payload,
@@ -400,13 +482,17 @@
           });
           savedId = docRef.id;
           currentScript.id = savedId;
-          showToast(`✅ 已新增至 Firestore 雲端：「${payload.title}」`);
+          showToast(`✅ 密碼驗證通過，已新增至 Firestore 雲端：「${payload.title}」`);
         }
 
         await fetchCloudScripts(savedId);
       } catch (err) {
         console.error("Firestore 儲存失敗:", err);
-        showToast(`❌ 雲端儲存失敗：${err.message}`, true);
+        if (err.code === 'permission-denied' || (err.message && err.message.includes('Missing or insufficient permissions'))) {
+          showToast("❌ 管理員密碼錯誤！雲端拒絕儲存變更。", true);
+        } else {
+          showToast(`❌ 雲端儲存失敗：${err.message}`, true);
+        }
       } finally {
         saveBtn.disabled = false;
         saveBtn.innerHTML = originalHtml;
@@ -415,11 +501,18 @@
 
     window.deleteCurrentCloudScript = async function() {
       if (!currentScript.id || currentScript.id === 'default') return;
-      if (!confirm(`確定要從雲端刪除「${currentScript.title}」嗎？`)) return;
 
+      // 1. 每次刪除皆彈出密碼視窗要求手動輸入
+      const enteredPassword = await promptAdminPassword(`從雲端刪除「${currentScript.title}」`);
+      if (!enteredPassword) return;
+
+      const docRef = doc(db, COLLECTION_NAME, currentScript.id);
       try {
-        await deleteDoc(doc(db, COLLECTION_NAME, currentScript.id));
-        showToast(`🗑️ 已從雲端刪除：「${currentScript.title}」`);
+        // 2. 先以輸入的密碼更新 adminKey（若密碼錯誤，Firestore 安全規則在此步驟即會擋下；若為舊資料且密碼正確，則可順利補上金鑰並執行刪除）
+        await setDoc(docRef, { adminKey: enteredPassword }, { merge: true });
+        await deleteDoc(docRef);
+
+        showToast(`🗑️ 密碼驗證通過，已從雲端刪除：「${currentScript.title}」`);
         currentScript = structuredClone(defaultScriptData);
         document.getElementById('savedScriptsSelect').value = 'default';
         document.getElementById('deleteCloudBtn').classList.add('hidden');
@@ -427,7 +520,11 @@
         await fetchCloudScripts('default');
       } catch (err) {
         console.error("刪除失敗:", err);
-        showToast(`❌ 刪除失敗：${err.message}`, true);
+        if (err.code === 'permission-denied' || (err.message && err.message.includes('Missing or insufficient permissions'))) {
+          showToast("❌ 管理員密碼錯誤！無法刪除此雲端講稿。", true);
+        } else {
+          showToast(`❌ 刪除失敗：${err.message}`, true);
+        }
       }
     };
 
@@ -797,12 +894,11 @@
       }
 
       const parsedData = parseLinesToCoherentScript(reconstructedLines, file.name.replace(/\.pdf$/i, ''));
-      // 標記為尚未存入雲端的新講稿
       parsedData.id = null;
       document.getElementById('deleteCloudBtn').classList.add('hidden');
       renderScript(parsedData);
 
-      showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」永久保存。`);
+      showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」並輸入管理密碼保存。`);
       event.target.value = '';
     };
 
