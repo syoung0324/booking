@@ -28,7 +28,7 @@
 
   <!-- 頂部控制列 -->
   <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-sky-100 shadow-sm">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2.5">
       <div class="flex items-center gap-2.5">
         <span class="text-3xl">🎙️</span>
         <div>
@@ -44,8 +44,8 @@
 
       <div class="flex flex-wrap items-center gap-2">
         <!-- 雲端講稿選擇器 -->
-        <div class="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">
-          <span class="text-xs font-bold text-indigo-700">📚 講稿庫：</span>
+        <div class="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5">
+          <span class="text-xs font-bold text-indigo-700 shrink-0">📚 講稿庫：</span>
           <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-indigo-900 focus:outline-none max-w-[150px]">
             <option value="default">預設範例 (11/13)</option>
           </select>
@@ -54,10 +54,16 @@
           </button>
         </div>
 
-        <!-- 語音選擇 -->
-        <select id="voiceSelect" class="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2 py-2 text-slate-700 focus:outline-none focus:border-sky-400 max-w-[140px]">
-          <option value="">載入語音中...</option>
-        </select>
+        <!-- 語調選擇（含說明文字，並與手機版同步預設口音） -->
+        <div class="flex items-center gap-1.5 bg-sky-50/80 border border-sky-200 rounded-lg px-2.5 py-1.5">
+          <div class="flex flex-col leading-none shrink-0">
+            <span class="text-xs font-bold text-sky-900">🗣️ 語調</span>
+            <span class="text-[10px] text-sky-600 mt-0.5">(可選不同的語調)</span>
+          </div>
+          <select id="voiceSelect" onchange="handleVoiceChange(this.value)" class="text-xs bg-white border border-sky-200 rounded-md px-2 py-1 text-slate-700 font-medium focus:outline-none focus:border-sky-400 max-w-[165px]">
+            <option value="">載入語調中...</option>
+          </select>
+        </div>
 
         <!-- 全域語速調整滑桿 -->
         <div class="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5" title="調整標準播放與連續播放的語速">
@@ -426,7 +432,7 @@
     }
 
     // =========================================================================
-    // 4. Firestore 讀寫與刪除邏輯
+    // 4. Firestore 讀寫與刪除邏輯（同步儲存預設語調偏好）
     // =========================================================================
     async function fetchCloudScripts(selectIdAfterLoad = null) {
       const statusBadge = document.getElementById('cloudStatus');
@@ -480,6 +486,10 @@
       if (target) {
         currentScript = structuredClone(target);
         deleteBtn.classList.remove('hidden');
+        // 若講稿有儲存管理員設定的語調偏好，跨裝置智慧套用最接近的語調
+        if (target.voiceProfile) {
+          applySmartVoiceMatch(target.voiceProfile);
+        }
         renderScript(currentScript);
       }
     };
@@ -503,10 +513,20 @@
           items: sec.items
         }));
 
+        // 紀錄當前選擇的語調特徵（口音 + 性別聲線），方便手機版同步對應
+        const selectedVoiceName = document.getElementById('voiceSelect').value;
+        const chosenVoice = voices.find(v => v.name === selectedVoiceName);
+        const voiceProfile = chosenVoice ? {
+          name: chosenVoice.name,
+          lang: normalizeLangCode(chosenVoice.lang),
+          gender: detectVoiceGender(chosenVoice.name)
+        } : null;
+
         const payload = {
           adminKey: enteredPassword,
           title: currentScript.title || "English Speaking Script",
           meetUrl: currentScript.meetUrl || "",
+          voiceProfile,
           sections: cleanSections,
           updatedAt: serverTimestamp()
         };
@@ -579,27 +599,148 @@
     };
 
     // =========================================================================
-    // 5. 語音合成引擎 (Web Speech API - 支援自訂語速)
+    // 5. 語音合成引擎（跨電腦版與手機版語調顯示/口音智慧同步）
     // =========================================================================
-    function loadVoices() {
-      voices = window.speechSynthesis.getVoices();
+    function normalizeLangCode(lang) {
+      return (lang || 'en-US').replace('_', '-');
+    }
+
+    function getAccentBadge(lang) {
+      const code = normalizeLangCode(lang).toLowerCase();
+      if (code.includes('us')) return '🇺🇸 美式';
+      if (code.includes('gb') || code.includes('uk')) return '🇬🇧 英式';
+      if (code.includes('au')) return '🇦🇺 澳式';
+      if (code.includes('ca')) return '🇨🇦 加式';
+      if (code.includes('in')) return '🇮🇳 印度';
+      return '🌐 英語';
+    }
+
+    function detectVoiceGender(name) {
+      const n = (name || '').toLowerCase();
+      if (/(steffan|guy|christopher|eric|roger|andrew|brian|aaron|alex|daniel|arthur|oliver|thomas|fred|male|man)/.test(n)) {
+        return 'male';
+      }
+      if (/(aria|jenny|ava|emma|michelle|ana|samantha|victoria|karen|moira|tessa|serena|kate|allison|susan|female|woman)/.test(n)) {
+        return 'female';
+      }
+      return 'neutral';
+    }
+
+    function formatVoiceDisplayName(voice) {
+      const accent = getAccentBadge(voice.lang);
+      // 清理電腦與手機瀏覽器多餘前綴，統一顯示簡潔易懂的語調名稱
+      let cleanName = voice.name
+        .replace(/Microsoft |Google |Apple |Android Speech Recognition and Synthesis from Google /gi, '')
+        .replace(/Online \(Natural\)/gi, '自然語調')
+        .replace(/\(United States\)|\(United Kingdom\)|\(Australia\)|English /gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanName || cleanName.toLowerCase() === 'us' || cleanName.toLowerCase() === 'uk') {
+        cleanName = '標準語調';
+      }
+      return `${accent} • ${cleanName}`;
+    }
+
+    window.handleVoiceChange = function(voiceName) {
+      const chosen = voices.find(v => v.name === voiceName);
+      if (chosen) {
+        localStorage.setItem('speaking_club_voice_profile', JSON.stringify({
+          name: chosen.name,
+          lang: normalizeLangCode(chosen.lang),
+          gender: detectVoiceGender(chosen.name)
+        }));
+      }
+    };
+
+    function applySmartVoiceMatch(profile) {
+      if (!profile || voices.length === 0) return;
       const voiceSelect = document.getElementById('voiceSelect');
-      const enVoices = voices.filter(v => v.lang.startsWith('en'));
+      const enVoices = voices.filter(v => normalizeLangCode(v.lang).toLowerCase().startsWith('en'));
       if (enVoices.length === 0) return;
 
+      // 1. 若同裝置有完全相同名稱的語調，直接選取
+      const exactMatch = enVoices.find(v => v.name === profile.name);
+      if (exactMatch) {
+        voiceSelect.value = exactMatch.name;
+        return;
+      }
+
+      // 2. 若為跨裝置（電腦 -> 手機），優先比對「相同口音 (如 en-US)」+「相同聲線性別」
+      const sameLangAndGender = enVoices.find(v =>
+        normalizeLangCode(v.lang).toLowerCase() === (profile.lang || 'en-us').toLowerCase() &&
+        detectVoiceGender(v.name) === profile.gender
+      );
+      if (sameLangAndGender) {
+        voiceSelect.value = sameLangAndGender.name;
+        return;
+      }
+
+      // 3. 退而求其次比對「相同口音 (如 en-US)」
+      const sameLang = enVoices.find(v =>
+        normalizeLangCode(v.lang).toLowerCase() === (profile.lang || 'en-us').toLowerCase()
+      );
+      if (sameLang) {
+        voiceSelect.value = sameLang.name;
+      }
+    }
+
+    function loadVoices() {
+      const rawVoices = window.speechSynthesis.getVoices();
+      if (!rawVoices || rawVoices.length === 0) return false;
+
+      voices = rawVoices;
+      const voiceSelect = document.getElementById('voiceSelect');
+      const enVoices = voices.filter(v => normalizeLangCode(v.lang).toLowerCase().startsWith('en'));
+      if (enVoices.length === 0) return false;
+
+      // 排序：優先把美式自然語調 (en-US) 排在最前面，讓手機與電腦預設一致
+      enVoices.sort((a, b) => {
+        const aUs = normalizeLangCode(a.lang).toLowerCase() === 'en-us' ? 0 : 1;
+        const bUs = normalizeLangCode(b.lang).toLowerCase() === 'en-us' ? 0 : 1;
+        if (aUs !== bUs) return aUs - bUs;
+        const aNat = /natural|google|samantha|ava|aria|steffan/i.test(a.name) ? 0 : 1;
+        const bNat = /natural|google|samantha|ava|aria|steffan/i.test(b.name) ? 0 : 1;
+        return aNat - bNat;
+      });
+
+      const previousValue = voiceSelect.value;
       voiceSelect.innerHTML = '';
-      enVoices.forEach((voice, idx) => {
+
+      enVoices.forEach((voice) => {
         const option = document.createElement('option');
         option.value = voice.name;
-        option.textContent = `${voice.name.replace(/Microsoft |Google /g, '')} (${voice.lang})`;
-        if (voice.lang === 'en-US' && (voice.name.includes('Google') || voice.name.includes('Natural') || idx === 0)) {
-          option.selected = true;
-        }
+        option.textContent = formatVoiceDisplayName(voice);
         voiceSelect.appendChild(option);
       });
+
+      // 套用偏好設定或預設第一個美式自然語調
+      const savedProfileRaw = localStorage.getItem('speaking_club_voice_profile');
+      if (currentScript?.voiceProfile) {
+        applySmartVoiceMatch(currentScript.voiceProfile);
+      } else if (savedProfileRaw) {
+        try {
+          applySmartVoiceMatch(JSON.parse(savedProfileRaw));
+        } catch (e) {}
+      } else if (previousValue && enVoices.some(v => v.name === previousValue)) {
+        voiceSelect.value = previousValue;
+      } else {
+        voiceSelect.selectedIndex = 0;
+      }
+
+      return true;
     }
+
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
+    // 手機瀏覽器（iOS Safari / Android Chrome）非同步載入補救輪詢
+    let voiceRetryCount = 0;
+    const voicePollTimer = setInterval(() => {
+      voiceRetryCount++;
+      if (loadVoices() || voiceRetryCount >= 12) {
+        clearInterval(voicePollTimer);
+      }
+    }, 300);
 
     window.speakText = function(text, rateMode = 'global', elementId = null, onEndCallback = null) {
       window.speechSynthesis.cancel();
@@ -621,8 +762,12 @@
       const utterance = new SpeechSynthesisUtterance(cleanSpeech);
       const selectedVoiceName = document.getElementById('voiceSelect').value;
       const chosenVoice = voices.find(v => v.name === selectedVoiceName);
-      if (chosenVoice) utterance.voice = chosenVoice;
-      utterance.lang = 'en-US';
+      if (chosenVoice) {
+        utterance.voice = chosenVoice;
+        utterance.lang = normalizeLangCode(chosenVoice.lang);
+      } else {
+        utterance.lang = 'en-US';
+      }
       utterance.rate = finalRate;
 
       utterance.onend = () => {
@@ -698,7 +843,7 @@
     };
 
     // =========================================================================
-    // 6. 句型編輯與畫面渲染（烏龜播放鈕與倍率選單分離為兩個獨立欄位）
+    // 6. 句型編輯與畫面渲染
     // =========================================================================
     window.mergeWithPrevious = function(secIdx, itemIdx) {
       if (itemIdx <= 0) return;
@@ -727,7 +872,6 @@
       renderScript(currentScript);
     };
 
-    // 獨立分成兩個元件：1. 烏龜慢速播放按鈕  2. 語速倍率下拉選單
     function renderSlowControlHtml(onClickCode) {
       const rates = [0.5, 0.6, 0.7, 0.8, 0.9];
       const optionsHtml = rates
