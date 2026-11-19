@@ -38,7 +38,7 @@
               ⏳ 連線雲端中...
             </span>
           </div>
-          <p class="text-xs text-slate-500">支援 PDF 匯入重組 • 可調式語速 • Firestore 同步</p>
+          <p class="text-xs text-slate-500">PDF 匯入自動中譯 • 可調式語速 • Firestore 同步</p>
         </div>
       </div>
 
@@ -92,6 +92,11 @@
           <input type="file" id="pdfUpload" accept="application/pdf" class="hidden" onchange="handlePdfUpload(event)" />
         </label>
 
+        <!-- 一鍵補齊中文翻譯 -->
+        <button id="translateBtn" onclick="triggerManualTranslate()" class="flex items-center gap-1 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition" title="自動為缺少中文註解的句子補齊翻譯">
+          <span>🌐</span> 補齊翻譯
+        </button>
+
         <!-- 儲存至 Firestore -->
         <button id="saveCloudBtn" onclick="saveScriptToFirestore()" class="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition">
           <span>☁️</span> 儲存至雲端
@@ -128,7 +133,7 @@
           </button>
         </div>
         <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-          點擊句子右側按鈕聆聽發音，可自由切換慢速跟讀倍率或調整上方語速滑桿
+          匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右側按鈕可聆聽標準或慢速發音
         </p>
       </div>
       <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
@@ -283,7 +288,131 @@
     };
 
     // =========================================================================
-    // 3. 預設範本與主題插圖生成器
+    // 3. 自動英翻中引擎（支援無中文註解自動補齊繁體中文）
+    // =========================================================================
+    const translationCache = new Map();
+
+    async function translateEnToZhTW(enText) {
+      const clean = (enText || '').trim();
+      if (!clean) return '';
+      if (translationCache.has(clean)) return translationCache.get(clean);
+
+      // 處理 "Ex: " 前綴，讓翻譯更自然
+      const hasExPrefix = /^Ex:\s*/i.test(clean);
+      const textToTranslate = hasExPrefix ? clean.replace(/^Ex:\s*/i, '') : clean;
+
+      let translated = '';
+
+      // 主要通道：Google Translate GTX 免金鑰端點（支援繁體中文 zh-TW）
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data?.[0])) {
+            translated = data[0].map(seg => seg[0] || '').join('').trim();
+          }
+        }
+      } catch (e) {
+        console.warn('主要翻譯端點暫時無法連線，切換備援翻譯:', e);
+      }
+
+      // 備援通道：MyMemory 免費翻譯 API
+      if (!translated) {
+        try {
+          const backupUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(textToTranslate)}&langpair=en|zh-TW`;
+          const res = await fetch(backupUrl);
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.responseData?.translatedText) {
+              translated = data.responseData.translatedText.trim();
+            }
+          }
+        } catch (e) {
+          console.warn('備援翻譯端點失敗:', e);
+        }
+      }
+
+      if (translated) {
+        const finalZh = hasExPrefix ? `範例：${translated}` : translated;
+        translationCache.set(clean, finalZh);
+        return finalZh;
+      }
+      return '';
+    }
+
+    async function autoTranslateMissingChinese(scriptObj, silentIfNone = true) {
+      if (!scriptObj || !Array.isArray(scriptObj.sections)) return 0;
+
+      const tasks = [];
+
+      scriptObj.sections.forEach(sec => {
+        // 若段落標題無中文，一併自動翻譯
+        if ((!sec.titleZh || !sec.titleZh.trim()) && sec.titleEn && !/^Part\s*\d+$/i.test(sec.titleEn)) {
+          tasks.push(async () => {
+            const zhTitle = await translateEnToZhTW(sec.titleEn);
+            if (zhTitle) sec.titleZh = zhTitle;
+          });
+        }
+
+        sec.items.forEach(item => {
+          const hasZh = item.zh && item.zh.trim().length > 0;
+          if (hasZh) return;
+
+          if (item.en) {
+            tasks.push(async () => {
+              const zh = await translateEnToZhTW(item.en);
+              if (zh) item.zh = zh;
+            });
+          } else if (item.templateEn) {
+            tasks.push(async () => {
+              const templateStr = item.templateEn.join(' [___] ').replace(/\s+/g, ' ').trim();
+              const zh = await translateEnToZhTW(templateStr);
+              if (zh) item.zh = `${zh}（填入單字後點擊朗讀）`;
+            });
+          }
+        });
+      });
+
+      if (tasks.length === 0) {
+        if (!silentIfNone) {
+          showToast('ℹ️ 所有句子都已經有中文註解囉！');
+        }
+        return 0;
+      }
+
+      const translateBtn = document.getElementById('translateBtn');
+      const origBtnHtml = translateBtn ? translateBtn.innerHTML : '';
+      if (translateBtn) {
+        translateBtn.disabled = true;
+        translateBtn.innerHTML = '<span>⏳</span> 翻譯中...';
+      }
+
+      showToast(`🌐 偵測到 ${tasks.length} 句無中文註解，正在自動翻譯成繁體中文...`);
+
+      // 分批並行翻譯（每次 5 句，兼顧速度與穩定度）
+      const batchSize = 5;
+      for (let i = 0; i < tasks.length; i += batchSize) {
+        const batch = tasks.slice(i, i + batchSize);
+        await Promise.all(batch.map(fn => fn()));
+        renderScript(scriptObj);
+      }
+
+      if (translateBtn) {
+        translateBtn.disabled = false;
+        translateBtn.innerHTML = origBtnHtml;
+      }
+
+      showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！確認無誤後可點擊「☁️ 儲存至雲端」保存。`);
+      return tasks.length;
+    }
+
+    window.triggerManualTranslate = async function() {
+      await autoTranslateMissingChinese(currentScript, false);
+    };
+
+    // =========================================================================
+    // 4. 預設範本與主題插圖生成器
     // =========================================================================
     function getIllustrationSvg(keywordText, fallbackIdx = 0) {
       const text = (keywordText || '').toLowerCase();
@@ -432,7 +561,7 @@
     }
 
     // =========================================================================
-    // 4. Firestore 讀寫與刪除邏輯（同步儲存預設語調偏好）
+    // 5. Firestore 讀寫與刪除邏輯
     // =========================================================================
     async function fetchCloudScripts(selectIdAfterLoad = null) {
       const statusBadge = document.getElementById('cloudStatus');
@@ -486,7 +615,6 @@
       if (target) {
         currentScript = structuredClone(target);
         deleteBtn.classList.remove('hidden');
-        // 若講稿有儲存管理員設定的語調偏好，跨裝置智慧套用最接近的語調
         if (target.voiceProfile) {
           applySmartVoiceMatch(target.voiceProfile);
         }
@@ -507,13 +635,12 @@
         const cleanSections = currentScript.sections.map(sec => ({
           part: sec.part,
           titleEn: sec.titleEn,
-          titleZh: sec.titleZh,
+          titleZh: sec.titleZh || '口說練習段落',
           icon: sec.icon,
           color: sec.color,
           items: sec.items
         }));
 
-        // 紀錄當前選擇的語調特徵（口音 + 性別聲線），方便手機版同步對應
         const selectedVoiceName = document.getElementById('voiceSelect').value;
         const chosenVoice = voices.find(v => v.name === selectedVoiceName);
         const voiceProfile = chosenVoice ? {
@@ -599,7 +726,7 @@
     };
 
     // =========================================================================
-    // 5. 語音合成引擎（跨電腦版與手機版語調顯示/口音智慧同步）
+    // 6. 語音合成引擎（跨電腦版與手機版語調顯示/口音智慧同步）
     // =========================================================================
     function normalizeLangCode(lang) {
       return (lang || 'en-US').replace('_', '-');
@@ -628,7 +755,6 @@
 
     function formatVoiceDisplayName(voice) {
       const accent = getAccentBadge(voice.lang);
-      // 清理電腦與手機瀏覽器多餘前綴，統一顯示簡潔易懂的語調名稱
       let cleanName = voice.name
         .replace(/Microsoft |Google |Apple |Android Speech Recognition and Synthesis from Google /gi, '')
         .replace(/Online \(Natural\)/gi, '自然語調')
@@ -659,14 +785,12 @@
       const enVoices = voices.filter(v => normalizeLangCode(v.lang).toLowerCase().startsWith('en'));
       if (enVoices.length === 0) return;
 
-      // 1. 若同裝置有完全相同名稱的語調，直接選取
       const exactMatch = enVoices.find(v => v.name === profile.name);
       if (exactMatch) {
         voiceSelect.value = exactMatch.name;
         return;
       }
 
-      // 2. 若為跨裝置（電腦 -> 手機），優先比對「相同口音 (如 en-US)」+「相同聲線性別」
       const sameLangAndGender = enVoices.find(v =>
         normalizeLangCode(v.lang).toLowerCase() === (profile.lang || 'en-us').toLowerCase() &&
         detectVoiceGender(v.name) === profile.gender
@@ -676,7 +800,6 @@
         return;
       }
 
-      // 3. 退而求其次比對「相同口音 (如 en-US)」
       const sameLang = enVoices.find(v =>
         normalizeLangCode(v.lang).toLowerCase() === (profile.lang || 'en-us').toLowerCase()
       );
@@ -694,7 +817,6 @@
       const enVoices = voices.filter(v => normalizeLangCode(v.lang).toLowerCase().startsWith('en'));
       if (enVoices.length === 0) return false;
 
-      // 排序：優先把美式自然語調 (en-US) 排在最前面，讓手機與電腦預設一致
       enVoices.sort((a, b) => {
         const aUs = normalizeLangCode(a.lang).toLowerCase() === 'en-us' ? 0 : 1;
         const bUs = normalizeLangCode(b.lang).toLowerCase() === 'en-us' ? 0 : 1;
@@ -714,7 +836,6 @@
         voiceSelect.appendChild(option);
       });
 
-      // 套用偏好設定或預設第一個美式自然語調
       const savedProfileRaw = localStorage.getItem('speaking_club_voice_profile');
       if (currentScript?.voiceProfile) {
         applySmartVoiceMatch(currentScript.voiceProfile);
@@ -733,7 +854,6 @@
 
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
-    // 手機瀏覽器（iOS Safari / Android Chrome）非同步載入補救輪詢
     let voiceRetryCount = 0;
     const voicePollTimer = setInterval(() => {
       voiceRetryCount++;
@@ -843,9 +963,9 @@
     };
 
     // =========================================================================
-    // 6. 句型編輯與畫面渲染
+    // 7. 句型編輯與畫面渲染
     // =========================================================================
-    window.mergeWithPrevious = function(secIdx, itemIdx) {
+    window.mergeWithPrevious = async function(secIdx, itemIdx) {
       if (itemIdx <= 0) return;
       const items = currentScript.sections[secIdx].items;
       const prev = items[itemIdx - 1];
@@ -860,16 +980,26 @@
       items[itemIdx - 1] = buildSentenceItem(mergedEn, mergedZh, false);
       items.splice(itemIdx, 1);
       renderScript(currentScript);
+      if (!mergedZh) {
+        await autoTranslateMissingChinese(currentScript, true);
+      }
     };
 
-    window.editSentence = function(secIdx, itemIdx) {
+    window.editSentence = async function(secIdx, itemIdx) {
       const item = currentScript.sections[secIdx].items[itemIdx];
       const currentEn = item.templateEn ? item.templateEn.join('___') : item.en;
       const newEn = prompt('編輯英文句子（使用 ___ 代表填空欄位）：', currentEn);
       if (newEn === null) return;
-      const newZh = prompt('編輯中文提示（可留空）：', item.zh || '');
-      currentScript.sections[secIdx].items[itemIdx] = buildSentenceItem(newEn.trim(), (newZh || '').trim(), item.isAnswer);
+      const newZh = prompt('編輯中文提示（留空則自動翻譯成繁體中文）：', item.zh || '');
+      if (newZh === null) return;
+
+      const trimmedZh = newZh.trim();
+      currentScript.sections[secIdx].items[itemIdx] = buildSentenceItem(newEn.trim(), trimmedZh, item.isAnswer);
       renderScript(currentScript);
+
+      if (!trimmedZh) {
+        await autoTranslateMissingChinese(currentScript, true);
+      }
     };
 
     function renderSlowControlHtml(onClickCode) {
@@ -949,7 +1079,7 @@
                 <div class="flex-1">
                   <div class="en-font text-lg text-slate-800 font-medium flex flex-wrap items-center">${sentenceHtml}</div>
                   <div class="flex items-center justify-between mt-1">
-                    <span class="text-xs text-slate-500">${item.zh || '填入單字後點擊朗讀'}</span>
+                    <span class="text-xs text-slate-500">${item.zh || '⏳ 準備翻譯中文...'}</span>
                     ${toolBtns}
                   </div>
                 </div>
@@ -1013,7 +1143,7 @@
                 ${sec.part}
               </span>
               ${svgContent}
-              <div class="text-xs font-bold text-slate-600 mt-2">${sec.titleZh}</div>
+              <div class="text-xs font-bold text-slate-600 mt-2">${sec.titleZh || '口說練習段落'}</div>
             </div>
 
             <div class="flex-1">
@@ -1036,7 +1166,7 @@
     }
 
     // =========================================================================
-    // 7. PDF 座標級解析與跨行智慧斷句重組
+    // 8. PDF 座標級解析、跨行斷句與自動中譯
     // =========================================================================
     window.handlePdfUpload = async function(event) {
       const file = event.target.files[0];
@@ -1101,8 +1231,13 @@
       document.getElementById('deleteCloudBtn').classList.add('hidden');
       renderScript(parsedData);
 
-      showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」並輸入管理密碼保存。`);
       event.target.value = '';
+
+      // 匯入後立即檢查：若無中文註解，自動逐句翻譯成繁體中文
+      const translatedCount = await autoTranslateMissingChinese(currentScript, true);
+      if (translatedCount === 0) {
+        showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」並輸入管理密碼保存。`);
+      }
     };
 
     function buildSentenceItem(enText, zhText, isAnswer = false) {
@@ -1121,13 +1256,13 @@
         return {
           templateEn: parts,
           placeholders,
-          zh: zhText || '請在空格填入單字並點擊朗讀'
+          zh: zhText || ''
         };
       }
 
       return {
         en: cleanEn,
-        zh: zhText,
+        zh: zhText || '',
         isAnswer
       };
     }
@@ -1190,7 +1325,7 @@
           if (currentSec) sections.push(currentSec);
           const secIdx = sections.length;
           const zhMatch = partMatch[2].match(/([\u4e00-\u9fa5].*)$/);
-          const titleZh = zhMatch ? zhMatch[1].trim() : '口說練習段落';
+          const titleZh = zhMatch ? zhMatch[1].trim() : '';
           const titleEn = zhMatch ? partMatch[2].replace(zhMatch[1], '').trim() : partMatch[2].trim();
 
           currentSec = {
@@ -1208,7 +1343,7 @@
           currentSec = {
             part: 'Part 1',
             titleEn: 'Speaking Practice',
-            titleZh: '口說練習',
+            titleZh: '',
             icon: '🗣️',
             color: 'sky',
             items: []
