@@ -820,7 +820,7 @@ function renderHeaderBanner(data) {
         </button>
       </div>
       <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-        匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右下角 ✏️ 可直接在句子處修改中英文
+        選取英文單字可查詢英英字典；匯入純英文講稿會自動補齊繁中翻譯；點擊右下角 ✏️ 可直接修改
       </p>
     </div>
     ${meetUrl ? `
@@ -1564,6 +1564,304 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
   if (currentSec) sections.push(currentSec);
   return { title: docTitle, meetUrl, sections };
 }
+
+// =========================================================================
+// 9. 反白選取單字 ➔ 浮動查詢按鈕 ➔ 可愛英英字典小視窗
+// =========================================================================
+const dictCache = new Map();
+let pendingSelectedWord = '';
+
+const selectionTooltipEl = document.getElementById('selectionDictTooltip');
+const selectionLabelEl = document.getElementById('selectionDictLabel');
+const dictModalEl = document.getElementById('dictModal');
+const dictSearchFormEl = document.getElementById('dictSearchForm');
+const dictSearchInputEl = document.getElementById('dictSearchInput');
+const dictResultBodyEl = document.getElementById('dictResultBody');
+const closeDictModalBtnEl = document.getElementById('closeDictModalBtn');
+
+function extractEnglishWord(rawText) {
+  if (!rawText) return '';
+  // 過濾前後標點符號（例如 "picture." -> "picture"），僅保留合法英文字母與連字號
+  const cleaned = rawText
+    .trim()
+    .replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '');
+  if (!cleaned || cleaned.length > 35) return '';
+  if (!/^[a-zA-Z]+(?:[-'][a-zA-Z]+)?$/.test(cleaned)) return '';
+  return cleaned.toLowerCase();
+}
+
+function hideSelectionTooltip() {
+  if (selectionTooltipEl) {
+    selectionTooltipEl.classList.add('hidden');
+    selectionTooltipEl.classList.remove('flex');
+  }
+}
+
+function positionAndShowSelectionTooltip(word, rect) {
+  if (!selectionTooltipEl || !selectionLabelEl) return;
+  pendingSelectedWord = word;
+  selectionLabelEl.textContent = `查「${word}」英英字典`;
+
+  selectionTooltipEl.classList.remove('hidden');
+  selectionTooltipEl.classList.add('flex');
+
+  const tooltipWidth = selectionTooltipEl.offsetWidth || 160;
+  const tooltipHeight = selectionTooltipEl.offsetHeight || 36;
+
+  let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+  left = Math.max(12, Math.min(window.innerWidth - tooltipWidth - 12, left));
+
+  let top = rect.top - tooltipHeight - 10;
+  if (top < 64) {
+    top = rect.bottom + 10;
+  }
+
+  selectionTooltipEl.style.left = `${left}px`;
+  selectionTooltipEl.style.top = `${top}px`;
+}
+
+function checkTextSelectionForDictionary(event) {
+  if (event?.target && selectionTooltipEl?.contains(event.target)) return;
+  if (dictModalEl && !dictModalEl.classList.contains('hidden')) return;
+
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+    hideSelectionTooltip();
+    return;
+  }
+
+  const anchorNode = sel.anchorNode;
+  const containerEl = document.getElementById('scriptContainer');
+  const bannerEl = document.getElementById('bannerCard');
+  const isInsideContent =
+    (containerEl && containerEl.contains(anchorNode)) ||
+    (bannerEl && bannerEl.contains(anchorNode));
+
+  if (!isInsideContent) {
+    hideSelectionTooltip();
+    return;
+  }
+
+  const word = extractEnglishWord(sel.toString());
+  if (!word) {
+    hideSelectionTooltip();
+    return;
+  }
+
+  const range = sel.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    hideSelectionTooltip();
+    return;
+  }
+
+  positionAndShowSelectionTooltip(word, rect);
+}
+
+document.addEventListener('mouseup', (e) => setTimeout(() => checkTextSelectionForDictionary(e), 10));
+document.addEventListener('touchend', (e) => setTimeout(() => checkTextSelectionForDictionary(e), 30));
+document.addEventListener('mousedown', (e) => {
+  if (selectionTooltipEl && !selectionTooltipEl.contains(e.target)) {
+    hideSelectionTooltip();
+  }
+});
+window.addEventListener('scroll', hideSelectionTooltip, { passive: true });
+
+if (selectionTooltipEl) {
+  selectionTooltipEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const targetWord = pendingSelectedWord;
+    hideSelectionTooltip();
+    if (targetWord) {
+      openDictionaryModal(targetWord);
+    }
+  });
+}
+
+async function fetchEnglishDefinition(word) {
+  const cleanWord = word.toLowerCase().trim();
+  if (dictCache.has(cleanWord)) return dictCache.get(cleanWord);
+
+  const candidates = [cleanWord];
+  if (cleanWord.endsWith('ies') && cleanWord.length > 4) {
+    candidates.push(cleanWord.slice(0, -3) + 'y');
+  }
+  if (cleanWord.endsWith('es') && cleanWord.length > 3) {
+    candidates.push(cleanWord.slice(0, -2));
+  }
+  if (cleanWord.endsWith('s') && cleanWord.length > 3) {
+    candidates.push(cleanWord.slice(0, -1));
+  }
+  if (cleanWord.endsWith('ed') && cleanWord.length > 4) {
+    candidates.push(cleanWord.slice(0, -2));
+    candidates.push(cleanWord.slice(0, -1));
+  }
+  if (cleanWord.endsWith('ing') && cleanWord.length > 5) {
+    candidates.push(cleanWord.slice(0, -3));
+    candidates.push(cleanWord.slice(0, -3) + 'e');
+  }
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(candidate)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          dictCache.set(cleanWord, data[0]);
+          return data[0];
+        }
+      }
+    } catch (e) {
+      console.warn('字典 API 連線異常:', e);
+    }
+  }
+  return null;
+}
+
+window.openDictionaryModal = async function(word) {
+  const cleanWord = extractEnglishWord(word) || word.trim().toLowerCase();
+  if (!cleanWord) return;
+
+  dictSearchInputEl.value = cleanWord;
+  dictModalEl.classList.remove('hidden');
+
+  dictResultBodyEl.innerHTML = `
+    <div class="py-10 text-center space-y-2">
+      <div class="text-3xl animate-bounce">🔎</div>
+      <p class="text-sm font-bold text-slate-600">正在翻閱英英字典「<span class="text-sky-600">${escapeHtml(cleanWord)}</span>」...</p>
+    </div>
+  `;
+
+  const entry = await fetchEnglishDefinition(cleanWord);
+  if (!entry) {
+    dictResultBodyEl.innerHTML = `
+      <div class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-center space-y-2.5">
+        <div class="text-3xl">🐣</div>
+        <p class="font-bold text-rose-700">找不到「${escapeHtml(cleanWord)}」的英英字典條目</p>
+        <p class="text-xs text-slate-600">可能是專有名詞或縮寫，您可以試試輸入單字原形，或前往外部字典查看：</p>
+        <div class="flex items-center justify-center gap-2 pt-1">
+          <a href="https://dictionary.cambridge.org/dictionary/english/${encodeURIComponent(cleanWord)}" target="_blank" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl transition">
+            劍橋英英字典 ↗
+          </a>
+          <a href="https://www.merriam-webster.com/dictionary/${encodeURIComponent(cleanWord)}" target="_blank" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition">
+            韋氏字典 ↗
+          </a>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const headword = entry.word || cleanWord;
+  const phoneticObj = (entry.phonetics || []).find(p => p.text) || {};
+  const phoneticText = entry.phonetic || phoneticObj.text || '';
+  const safeHeadword = headword.replace(/'/g, "\\'");
+
+  const posColors = {
+    noun: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    verb: 'bg-sky-100 text-sky-800 border-sky-200',
+    adjective: 'bg-amber-100 text-amber-800 border-amber-200',
+    adverb: 'bg-purple-100 text-purple-800 border-purple-200'
+  };
+
+  const meaningsHtml = (entry.meanings || []).map((m) => {
+    const pos = (m.partOfSpeech || '').toLowerCase();
+    const badgeStyle = posColors[pos] || 'bg-slate-100 text-slate-700 border-slate-200';
+    const defs = (m.definitions || []).slice(0, 3);
+
+    const defsListHtml = defs.map((d, idx) => {
+      const exampleText = d.example || '';
+      const safeExample = exampleText.replace(/'/g, "\\'");
+      return `
+        <li class="pl-1">
+          <p class="text-slate-800 font-medium leading-relaxed">
+            <span class="text-amber-600 font-bold mr-1">${idx + 1}.</span>${escapeHtml(d.definition)}
+          </p>
+          ${exampleText ? `
+            <div class="mt-1.5 pl-3 border-l-2 border-sky-300 bg-sky-50/70 rounded-r-xl py-1.5 px-2.5 flex items-start justify-between gap-2">
+              <p class="text-xs italic text-slate-600 leading-relaxed">"${escapeHtml(exampleText)}"</p>
+              <button
+                type="button"
+                onclick="speakText('${safeExample}', 'global')"
+                class="shrink-0 text-xs px-2 py-0.5 rounded-lg bg-sky-100 hover:bg-sky-200 text-sky-800 font-bold transition"
+                title="朗讀例句"
+              >
+                🔊
+              </button>
+            </div>
+          ` : ''}
+        </li>
+      `;
+    }).join('');
+
+    return `
+      <div class="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-2.5">
+        <span class="inline-block text-xs font-bold px-2.5 py-0.5 rounded-full border ${badgeStyle}">
+          ${escapeHtml(m.partOfSpeech || 'word')}
+        </span>
+        <ol class="space-y-2.5">
+          ${defsListHtml}
+        </ol>
+      </div>
+    `;
+  }).join('');
+
+  dictResultBodyEl.innerHTML = `
+    <div class="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200">
+      <div>
+        <div class="en-font text-2xl font-bold text-sky-950">${escapeHtml(headword)}</div>
+        ${phoneticText ? `<div class="font-mono text-xs text-sky-700 mt-0.5">${escapeHtml(phoneticText)}</div>` : ''}
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          type="button"
+          onclick="speakText('${safeHeadword}', 'global')"
+          class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
+        >
+          🔊 發音
+        </button>
+        <button
+          type="button"
+          onclick="speakText('${safeHeadword}', 'slow')"
+          class="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-900 text-xs font-bold rounded-xl transition"
+          title="慢速發音"
+        >
+          🐢
+        </button>
+      </div>
+    </div>
+
+    ${meaningsHtml}
+  `;
+};
+
+window.closeDictionaryModal = function() {
+  if (dictModalEl) {
+    dictModalEl.classList.add('hidden');
+  }
+};
+
+if (closeDictModalBtnEl) {
+  closeDictModalBtnEl.addEventListener('click', window.closeDictionaryModal);
+}
+if (dictModalEl) {
+  dictModalEl.addEventListener('click', (e) => {
+    if (e.target === dictModalEl) window.closeDictionaryModal();
+  });
+}
+if (dictSearchFormEl) {
+  dictSearchFormEl.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const q = dictSearchInputEl.value.trim();
+    if (q) window.openDictionaryModal(q);
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && dictModalEl && !dictModalEl.classList.contains('hidden')) {
+    window.closeDictionaryModal();
+  }
+});
 
 // 初始渲染並載入 Firestore 講稿清單
 renderScript(currentScript);

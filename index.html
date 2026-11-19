@@ -22,7 +22,7 @@
               ⏳ 連線雲端中...
             </span>
           </div>
-          <p class="text-xs text-slate-500">PDF 匯入自動中譯 • 可調式語速 • Firestore 同步</p>
+          <p class="text-xs text-slate-500">反白單字查英英字典 • PDF 自動中譯 • Firestore 同步</p>
         </div>
       </div>
 
@@ -103,6 +103,62 @@
     <!-- 講稿卡片容器 -->
     <div id="scriptContainer" class="space-y-6"></div>
   </main>
+
+  <!-- 選取文字時出現的可愛浮動查字典小按鈕 -->
+  <button
+    id="selectionDictTooltip"
+    type="button"
+    class="hidden fixed z-40 items-center gap-1.5 px-3.5 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-amber-950 font-bold text-xs shadow-lg border-2 border-white cursor-pointer transition-transform hover:scale-105"
+  >
+    <span class="text-sm">📖</span>
+    <span id="selectionDictLabel">查英英字典</span>
+  </button>
+
+  <!-- 可愛英英字典小對話框 -->
+  <div id="dictModal" class="hidden fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="dict-pop bg-white rounded-3xl shadow-2xl border-4 border-amber-200 max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]">
+      <!-- 可愛頂部標題列 -->
+      <div class="bg-gradient-to-r from-amber-300 via-yellow-200 to-sky-200 px-5 py-3.5 flex items-center justify-between border-b-2 border-amber-200">
+        <div class="flex items-center gap-2">
+          <span class="text-2xl">🦉</span>
+          <div>
+            <h3 class="text-base font-bold text-amber-950 leading-tight">英英小字典</h3>
+            <p class="text-[11px] text-amber-800/80">English-to-English Dictionary</p>
+          </div>
+        </div>
+        <button
+          id="closeDictModalBtn"
+          type="button"
+          class="w-8 h-8 rounded-full bg-white/80 hover:bg-white text-slate-600 hover:text-rose-600 font-bold text-sm flex items-center justify-center shadow-xs transition"
+          title="關閉小字典 (Esc)"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- 單字搜尋欄 -->
+      <div class="px-5 pt-3.5 pb-2.5 bg-amber-50/50 border-b border-amber-100">
+        <form id="dictSearchForm" class="flex items-center gap-2">
+          <input
+            type="text"
+            id="dictSearchInput"
+            placeholder="輸入想查詢的英文單字..."
+            autocomplete="off"
+            class="en-font flex-1 px-3.5 py-2 text-base font-bold text-slate-800 bg-white border-2 border-amber-200 rounded-2xl focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+          />
+          <button
+            type="submit"
+            class="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold rounded-2xl shadow-xs transition shrink-0"
+          >
+            🔍 查詢
+          </button>
+        </form>
+      </div>
+
+      <!-- 查詢結果內容區 -->
+      <div id="dictResultBody" class="p-5 overflow-y-auto space-y-3.5 text-sm"></div>
+    </div>
+  </div>
 
   <!-- 管理員密碼驗證彈窗 -->
   <div id="adminAuthModal" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
