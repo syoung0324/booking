@@ -97,36 +97,8 @@
       <button onclick="this.parentElement.classList.add('hidden')" class="text-current opacity-70 hover:opacity-100 font-bold ml-3">✕</button>
     </div>
 
-    <!-- 活動資訊橫幅 -->
-    <div id="bannerCard" class="bg-gradient-to-r from-sky-500 to-indigo-600 rounded-2xl p-6 text-white shadow-md mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-      <div class="flex-1">
-        <div class="flex items-center gap-2 mb-2">
-          <span class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full">
-            線上口說練習講稿
-          </span>
-          <span id="docSourceBadge" class="inline-block bg-amber-300/25 text-amber-100 text-xs font-semibold px-2.5 py-1 rounded-full">
-            本地預設範本
-          </span>
-        </div>
-        <div class="flex items-center gap-2">
-          <h2 id="docTitle" class="en-font text-2xl md:text-3xl font-bold tracking-wide">
-            Speaking Club 11/13 8pm
-          </h2>
-          <button onclick="editDocHeader()" class="text-xs bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-white transition" title="編輯標題與 Meet 連結">
-            ✏️ 編輯資訊
-          </button>
-        </div>
-        <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-          匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右下角 ✏️ 可直接在句子處修改中英文
-        </p>
-      </div>
-      <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
-        <div class="text-xs text-sky-100 mb-1">Google Meet 教室連結：</div>
-        <a href="https://meet.google.com/ppf-tncw-krk" target="_blank" class="font-mono font-bold underline hover:text-amber-200 break-all">
-          meet.google.com/ppf-tncw-krk
-        </a>
-      </div>
-    </div>
+    <!-- 活動資訊橫幅（支援原地行內編輯） -->
+    <div id="bannerCard" class="bg-gradient-to-r from-sky-500 to-indigo-600 rounded-2xl p-6 text-white shadow-md mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"></div>
 
     <!-- 講稿卡片容器 -->
     <div id="scriptContainer" class="space-y-6"></div>

@@ -414,6 +414,7 @@ let voices = [];
 let isPlayingAll = false;
 let playQueueIndex = 0;
 let editingTarget = { secIdx: null, itemIdx: null };
+let isEditingHeader = false;
 
 function showToast(msg, isError = false) {
   const toast = document.getElementById('statusToast');
@@ -435,6 +436,13 @@ function escapeAttr(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
@@ -488,6 +496,7 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
 
 window.loadSelectedScript = async function(scriptId) {
   editingTarget = { secIdx: null, itemIdx: null };
+  isEditingHeader = false;
   const deleteBtn = document.getElementById('deleteCloudBtn');
   if (scriptId === 'default') {
     currentScript = structuredClone(defaultScriptData);
@@ -515,6 +524,9 @@ window.loadSelectedScript = async function(scriptId) {
 };
 
 window.saveScriptToFirestore = async function() {
+  if (isEditingHeader) {
+    window.saveHeaderEdit();
+  }
   if (editingTarget.secIdx !== null && editingTarget.itemIdx !== null) {
     await window.saveInlineEdit(editingTarget.secIdx, editingTarget.itemIdx);
   }
@@ -662,17 +674,165 @@ window.deleteCurrentCloudScript = async function() {
   }
 };
 
+// =========================================================================
+// 5-1. 活動資訊橫幅（原地行內編輯，不跳出彈窗）
+// =========================================================================
 window.editDocHeader = function() {
-  const newTitle = prompt("修改講稿標題：", currentScript.title);
-  if (newTitle !== null && newTitle.trim() !== "") {
-    currentScript.title = newTitle.trim();
-  }
-  const newUrl = prompt("修改 Google Meet 連結（留空則隱藏）：", currentScript.meetUrl || "");
-  if (newUrl !== null) {
-    currentScript.meetUrl = newUrl.trim();
-  }
-  renderScript(currentScript);
+  isEditingHeader = true;
+  renderHeaderBanner(currentScript);
+
+  setTimeout(() => {
+    const titleInput = document.getElementById('editHeaderTitleInput');
+    if (titleInput) {
+      titleInput.focus();
+      const len = titleInput.value.length;
+      titleInput.setSelectionRange(len, len);
+    }
+  }, 20);
 };
+
+window.cancelHeaderEdit = function() {
+  isEditingHeader = false;
+  renderHeaderBanner(currentScript);
+};
+
+window.saveHeaderEdit = function() {
+  const titleInput = document.getElementById('editHeaderTitleInput');
+  const meetInput = document.getElementById('editHeaderMeetInput');
+  if (!titleInput || !meetInput) return;
+
+  const newTitle = titleInput.value.trim();
+  if (!newTitle) {
+    titleInput.focus();
+    return;
+  }
+
+  currentScript.title = newTitle;
+  currentScript.meetUrl = meetInput.value.trim();
+  isEditingHeader = false;
+  renderHeaderBanner(currentScript);
+};
+
+window.handleHeaderEditKeydown = function(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    window.saveHeaderEdit();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    window.cancelHeaderEdit();
+  }
+};
+
+function renderHeaderBanner(data) {
+  const bannerCard = document.getElementById('bannerCard');
+  if (!bannerCard) return;
+
+  const isCloud = data.id && data.id !== 'default';
+  const badgeClass = isCloud
+    ? 'inline-block bg-emerald-400/25 text-emerald-100 text-xs font-semibold px-2.5 py-1 rounded-full'
+    : 'inline-block bg-amber-300/25 text-amber-100 text-xs font-semibold px-2.5 py-1 rounded-full';
+  const badgeText = isCloud ? '☁️ 雲端同步講稿' : '本地未儲存 / 範本';
+
+  if (isEditingHeader) {
+    bannerCard.innerHTML = `
+      <div class="flex-1 w-full space-y-3">
+        <div class="flex items-center gap-2">
+          <span class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full">
+            線上口說練習講稿
+          </span>
+          <span class="${badgeClass}">${badgeText}</span>
+          <span class="text-xs text-amber-200 font-bold">✏️ 編輯模式</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label for="editHeaderTitleInput" class="block text-xs font-bold text-sky-100 mb-1">
+              講稿標題：
+            </label>
+            <input
+              id="editHeaderTitleInput"
+              type="text"
+              value="${escapeAttr(data.title || '')}"
+              onkeydown="handleHeaderEditKeydown(event)"
+              placeholder="輸入講稿標題..."
+              class="en-font w-full px-3.5 py-2 text-base md:text-lg font-bold text-slate-900 bg-white border-2 border-amber-300 rounded-xl shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+            />
+          </div>
+
+          <div>
+            <label for="editHeaderMeetInput" class="block text-xs font-bold text-sky-100 mb-1">
+              Google Meet 教室連結（留空則隱藏）：
+            </label>
+            <input
+              id="editHeaderMeetInput"
+              type="text"
+              value="${escapeAttr(data.meetUrl || '')}"
+              onkeydown="handleHeaderEditKeydown(event)"
+              placeholder="https://meet.google.com/..."
+              class="font-mono w-full px-3.5 py-2 text-sm font-medium text-slate-900 bg-white border-2 border-sky-200 rounded-xl shadow-xs focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-200"
+            />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <button
+            type="button"
+            onclick="saveHeaderEdit()"
+            class="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm transition"
+          >
+            ✅ 完成修改
+          </button>
+          <button
+            type="button"
+            onclick="cancelHeaderEdit()"
+            class="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-lg transition"
+          >
+            ✕ 取消
+          </button>
+          <span class="text-xs text-sky-100/90 ml-1">按 Enter 套用 • Esc 取消</span>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const safeTitle = escapeHtml(data.title || 'English Speaking Script');
+  const meetUrl = (data.meetUrl || '').trim();
+  const normalizedHref = meetUrl && !/^https?:\/\//i.test(meetUrl) ? `https://${meetUrl}` : meetUrl;
+  const displayMeetText = escapeHtml(meetUrl.replace(/^https?:\/\//i, ''));
+
+  bannerCard.innerHTML = `
+    <div class="flex-1">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full">
+          線上口說練習講稿
+        </span>
+        <span id="docSourceBadge" class="${badgeClass}">
+          ${badgeText}
+        </span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 id="docTitle" class="en-font text-2xl md:text-3xl font-bold tracking-wide">
+          ${safeTitle}
+        </h2>
+        <button onclick="editDocHeader()" class="text-xs bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white font-medium transition" title="直接在此處編輯標題與 Meet 連結">
+          ✏️ 編輯資訊
+        </button>
+      </div>
+      <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
+        匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右下角 ✏️ 可直接在句子處修改中英文
+      </p>
+    </div>
+    ${meetUrl ? `
+      <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
+        <div class="text-xs text-sky-100 mb-1">Google Meet 教室連結：</div>
+        <a href="${escapeAttr(normalizedHref)}" target="_blank" class="font-mono font-bold underline hover:text-amber-200 break-all">
+          ${displayMeetText}
+        </a>
+      </div>
+    ` : ''}
+  `;
+}
 
 // =========================================================================
 // 6. 語音合成引擎（跨電腦版與手機版語調顯示/口音智慧同步）
@@ -1005,25 +1165,7 @@ function renderSlowControlHtml(onClickCode) {
 
 function renderScript(data) {
   currentScript = data;
-  document.getElementById('docTitle').textContent = data.title || 'English Speaking Script';
-
-  const sourceBadge = document.getElementById('docSourceBadge');
-  if (data.id && data.id !== 'default') {
-    sourceBadge.textContent = '☁️ 雲端同步講稿';
-    sourceBadge.className = 'inline-block bg-emerald-400/25 text-emerald-100 text-xs font-semibold px-2.5 py-1 rounded-full';
-  } else {
-    sourceBadge.textContent = '本地未儲存 / 範本';
-    sourceBadge.className = 'inline-block bg-amber-300/25 text-amber-100 text-xs font-semibold px-2.5 py-1 rounded-full';
-  }
-
-  const meetBox = document.getElementById('meetLinkBox');
-  if (data.meetUrl) {
-    meetBox.classList.remove('hidden');
-    meetBox.querySelector('a').href = data.meetUrl;
-    meetBox.querySelector('a').textContent = data.meetUrl.replace(/^https?:\/\//, '');
-  } else {
-    meetBox.classList.add('hidden');
-  }
+  renderHeaderBanner(data);
 
   const container = document.getElementById('scriptContainer');
   container.innerHTML = '';
@@ -1212,6 +1354,7 @@ window.handlePdfUpload = async function(event) {
   if (!file) return;
 
   editingTarget = { secIdx: null, itemIdx: null };
+  isEditingHeader = false;
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let reconstructedLines = [];
