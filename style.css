@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+body {
+  font-family: 'Noto Sans TC', sans-serif;
+  background-color: #f0f7ff;
+}
+
+.en-font {
+  font-family: 'Fredoka', 'Noto Sans TC', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+.speaking-active {
+  background-color: #fef08a !important;
+  border-color: #eab308 !important;
+  transform: scale(1.01);
+  transition: all 0.2s ease;
+}
