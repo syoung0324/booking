@@ -109,8 +109,8 @@
   <main class="max-w-5xl mx-auto px-4 mt-6">
     <!-- 狀態提示列 -->
     <div id="statusToast" class="hidden mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between shadow-sm">
-      <span id="statusToastMsg">✅ 操作完成</span>
-      <button onclick="this.parentElement.classList.add('hidden')" class="text-emerald-600 hover:text-emerald-900 font-bold">✕</button>
+      <span id="statusToastMsg" class="font-medium">✅ 操作完成</span>
+      <button onclick="this.parentElement.classList.add('hidden')" class="text-current opacity-70 hover:opacity-100 font-bold ml-3">✕</button>
     </div>
 
     <!-- 活動資訊橫幅 -->
@@ -133,7 +133,7 @@
           </button>
         </div>
         <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-          匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右側按鈕可聆聽標準或慢速發音
+          匯入純英文講稿時會自動補齊繁體中文翻譯；點擊右下角 ✏️ 可直接在句子處修改中英文
         </p>
       </div>
       <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
@@ -176,6 +176,27 @@
     </div>
   </div>
 
+  <!-- 密碼錯誤／操作失敗明確警示彈窗 -->
+  <div id="errorAlertModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border-2 border-rose-300 max-w-sm w-full p-6">
+      <div class="flex items-center gap-2.5 mb-3">
+        <span class="text-3xl">❌</span>
+        <h3 id="errorAlertTitle" class="text-lg font-bold text-rose-700">密碼錯誤，沒有儲存成功</h3>
+      </div>
+      <p id="errorAlertMsg" class="text-sm text-slate-700 leading-relaxed mb-5">
+        您輸入的管理員密碼不正確，雲端已拒絕寫入，本次講稿<strong>沒有儲存成功</strong>。請確認密碼後重新嘗試。
+      </p>
+      <div class="flex items-center justify-end gap-2">
+        <button id="errorCloseBtn" type="button" class="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition">
+          我知道了
+        </button>
+        <button id="errorRetryBtn" type="button" class="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm transition">
+          🔄 重新輸入密碼
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
@@ -185,6 +206,8 @@
       addDoc,
       setDoc,
       getDocs,
+      getDocsFromServer,
+      getDocFromServer,
       deleteDoc,
       query,
       orderBy,
@@ -260,6 +283,54 @@
       });
     }
 
+    function showErrorAlertModal(title, htmlMessage, allowRetry = true) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('errorAlertModal');
+        const titleEl = document.getElementById('errorAlertTitle');
+        const msgEl = document.getElementById('errorAlertMsg');
+        const closeBtn = document.getElementById('errorCloseBtn');
+        const retryBtn = document.getElementById('errorRetryBtn');
+
+        titleEl.textContent = title;
+        msgEl.innerHTML = htmlMessage;
+        if (allowRetry) {
+          retryBtn.classList.remove('hidden');
+        } else {
+          retryBtn.classList.add('hidden');
+        }
+
+        modal.classList.remove('hidden');
+        setTimeout(() => (allowRetry ? retryBtn : closeBtn).focus(), 50);
+
+        function cleanup(retry) {
+          modal.classList.add('hidden');
+          closeBtn.removeEventListener('click', onClose);
+          retryBtn.removeEventListener('click', onRetry);
+          document.removeEventListener('keydown', onKeydown);
+          resolve(retry);
+        }
+
+        function onClose() {
+          cleanup(false);
+        }
+
+        function onRetry() {
+          cleanup(true);
+        }
+
+        function onKeydown(e) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+          }
+        }
+
+        closeBtn.addEventListener('click', onClose);
+        retryBtn.addEventListener('click', onRetry);
+        document.addEventListener('keydown', onKeydown);
+      });
+    }
+
     // =========================================================================
     // 2. 語速狀態管理（全域語速 + 可調式慢速跟讀倍率）
     // =========================================================================
@@ -297,13 +368,11 @@
       if (!clean) return '';
       if (translationCache.has(clean)) return translationCache.get(clean);
 
-      // 處理 "Ex: " 前綴，讓翻譯更自然
       const hasExPrefix = /^Ex:\s*/i.test(clean);
       const textToTranslate = hasExPrefix ? clean.replace(/^Ex:\s*/i, '') : clean;
 
       let translated = '';
 
-      // 主要通道：Google Translate GTX 免金鑰端點（支援繁體中文 zh-TW）
       try {
         const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-TW&dt=t&q=${encodeURIComponent(textToTranslate)}`;
         const res = await fetch(url);
@@ -317,7 +386,6 @@
         console.warn('主要翻譯端點暫時無法連線，切換備援翻譯:', e);
       }
 
-      // 備援通道：MyMemory 免費翻譯 API
       if (!translated) {
         try {
           const backupUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(textToTranslate)}&langpair=en|zh-TW`;
@@ -347,8 +415,7 @@
       const tasks = [];
 
       scriptObj.sections.forEach(sec => {
-        // 若段落標題無中文，一併自動翻譯
-        if ((!sec.titleZh || !sec.titleZh.trim()) && sec.titleEn && !/^Part\s*\d+$/i.test(sec.titleEn)) {
+        if ((!sec.titleZh || !sec.titleZh.trim() || sec.titleZh === '口說練習段落') && sec.titleEn && !/^Part\s*\d+$/i.test(sec.titleEn)) {
           tasks.push(async () => {
             const zhTitle = await translateEnToZhTW(sec.titleEn);
             if (zhTitle) sec.titleZh = zhTitle;
@@ -390,7 +457,6 @@
 
       showToast(`🌐 偵測到 ${tasks.length} 句無中文註解，正在自動翻譯成繁體中文...`);
 
-      // 分批並行翻譯（每次 5 句，兼顧速度與穩定度）
       const batchSize = 5;
       for (let i = 0; i < tasks.length; i += batchSize) {
         const batch = tasks.slice(i, i + batchSize);
@@ -403,7 +469,7 @@
         translateBtn.innerHTML = origBtnHtml;
       }
 
-      showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！確認無誤後可點擊「☁️ 儲存至雲端」保存。`);
+      showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！請點擊「☁️ 儲存至雲端」保存。`);
       return tasks.length;
     }
 
@@ -547,6 +613,7 @@
     let voices = [];
     let isPlayingAll = false;
     let playQueueIndex = 0;
+    let editingTarget = { secIdx: null, itemIdx: null };
 
     function showToast(msg, isError = false) {
       const toast = document.getElementById('statusToast');
@@ -560,14 +627,31 @@
       toastMsg.textContent = msg;
     }
 
+    function sanitizeForFirestore(obj) {
+      return JSON.parse(JSON.stringify(obj));
+    }
+
+    function escapeAttr(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
     // =========================================================================
-    // 5. Firestore 讀寫與刪除邏輯
+    // 5. Firestore 讀寫與刪除邏輯（含密碼錯誤明確警示與重試機制）
     // =========================================================================
     async function fetchCloudScripts(selectIdAfterLoad = null) {
       const statusBadge = document.getElementById('cloudStatus');
       try {
         const q = query(collection(db, COLLECTION_NAME), orderBy("updatedAt", "desc"));
-        const querySnapshot = await getDocs(q);
+        let querySnapshot;
+        try {
+          querySnapshot = await getDocsFromServer(q);
+        } catch (serverErr) {
+          querySnapshot = await getDocs(q);
+        }
 
         savedScriptsMap.clear();
         const selectEl = document.getElementById('savedScriptsSelect');
@@ -588,11 +672,11 @@
 
         if (selectIdAfterLoad && savedScriptsMap.has(selectIdAfterLoad)) {
           selectEl.value = selectIdAfterLoad;
-          loadSelectedScript(selectIdAfterLoad);
+          await loadSelectedScript(selectIdAfterLoad);
         } else if (!selectIdAfterLoad && savedScriptsMap.size > 0) {
           const latestId = querySnapshot.docs[0].id;
           selectEl.value = latestId;
-          loadSelectedScript(latestId);
+          await loadSelectedScript(latestId);
         }
       } catch (err) {
         console.error("Firestore 讀取失敗:", err);
@@ -602,7 +686,8 @@
       }
     }
 
-    window.loadSelectedScript = function(scriptId) {
+    window.loadSelectedScript = async function(scriptId) {
+      editingTarget = { secIdx: null, itemIdx: null };
       const deleteBtn = document.getElementById('deleteCloudBtn');
       if (scriptId === 'default') {
         currentScript = structuredClone(defaultScriptData);
@@ -619,10 +704,21 @@
           applySmartVoiceMatch(target.voiceProfile);
         }
         renderScript(currentScript);
+
+        const hasMissingZh = currentScript.sections?.some(sec =>
+          sec.items?.some(it => !(it.zh && it.zh.trim()))
+        );
+        if (hasMissingZh) {
+          await autoTranslateMissingChinese(currentScript, true);
+        }
       }
     };
 
     window.saveScriptToFirestore = async function() {
+      if (editingTarget.secIdx !== null && editingTarget.itemIdx !== null) {
+        await window.saveInlineEdit(editingTarget.secIdx, editingTarget.itemIdx);
+      }
+
       const enteredPassword = await promptAdminPassword(`儲存講稿「${currentScript.title}」至雲端`);
       if (!enteredPassword) return;
 
@@ -631,15 +727,32 @@
       saveBtn.disabled = true;
       saveBtn.innerHTML = '<span>⏳</span> 驗證並儲存中...';
 
+      let shouldRetry = false;
+
       try {
-        const cleanSections = currentScript.sections.map(sec => ({
-          part: sec.part,
-          titleEn: sec.titleEn,
-          titleZh: sec.titleZh || '口說練習段落',
-          icon: sec.icon,
-          color: sec.color,
-          items: sec.items
-        }));
+        const cleanSections = sanitizeForFirestore(
+          currentScript.sections.map(sec => ({
+            part: sec.part || 'Part 1',
+            titleEn: sec.titleEn || '',
+            titleZh: sec.titleZh || '口說練習段落',
+            icon: sec.icon || '🗣️',
+            color: sec.color || 'sky',
+            items: (sec.items || []).map(it => {
+              if (it.templateEn) {
+                return {
+                  templateEn: it.templateEn,
+                  placeholders: it.placeholders || [],
+                  zh: (it.zh || '').trim()
+                };
+              }
+              return {
+                en: it.en || '',
+                zh: (it.zh || '').trim(),
+                isAnswer: Boolean(it.isAnswer)
+              };
+            })
+          }))
+        );
 
         const selectedVoiceName = document.getElementById('voiceSelect').value;
         const chosenVoice = voices.find(v => v.name === selectedVoiceName);
@@ -661,7 +774,6 @@
         let savedId = currentScript.id;
         if (savedId && savedId !== 'default') {
           await setDoc(doc(db, COLLECTION_NAME, savedId), payload, { merge: true });
-          showToast(`✅ 密碼驗證通過，已更新雲端講稿：「${payload.title}」`);
         } else {
           const docRef = await addDoc(collection(db, COLLECTION_NAME), {
             ...payload,
@@ -669,20 +781,43 @@
           });
           savedId = docRef.id;
           currentScript.id = savedId;
-          showToast(`✅ 密碼驗證通過，已新增至 Firestore 雲端：「${payload.title}」`);
         }
 
+        const verifySnap = await getDocFromServer(doc(db, COLLECTION_NAME, savedId));
+        const verifiedData = verifySnap.data();
+        const zhCount = (verifiedData?.sections || []).reduce((acc, s) =>
+          acc + (s.items || []).filter(i => i.zh && i.zh.trim().length > 0).length, 0
+        );
+
+        showToast(`✅ 密碼驗證通過，已成功儲存至雲端「${payload.title}」（含 ${zhCount} 句中文翻譯）`);
         await fetchCloudScripts(savedId);
       } catch (err) {
         console.error("Firestore 儲存失敗:", err);
-        if (err.code === 'permission-denied' || (err.message && err.message.includes('Missing or insufficient permissions'))) {
-          showToast("❌ 管理員密碼錯誤！雲端拒絕儲存變更。", true);
+        const isAuthError = err.code === 'permission-denied' ||
+          (err.message && (err.message.includes('Missing or insufficient permissions') || err.message.includes('PERMISSION_DENIED')));
+
+        if (isAuthError) {
+          showToast("❌ 管理員密碼錯誤！資料「沒有儲存成功」，請確認密碼後再試。", true);
+          shouldRetry = await showErrorAlertModal(
+            "密碼錯誤，沒有儲存成功",
+            `您輸入的管理員密碼不正確，雲端已拒絕寫入權限。<br><br>⚠️ 目前講稿「<strong>${currentScript.title}</strong>」<span class="text-rose-600 font-bold underline">沒有儲存成功</span>，請重新輸入正確密碼。`,
+            true
+          );
         } else {
-          showToast(`❌ 雲端儲存失敗：${err.message}`, true);
+          showToast(`❌ 雲端連線異常，資料「沒有儲存成功」：${err.message}`, true);
+          await showErrorAlertModal(
+            "儲存失敗，沒有寫入雲端",
+            `發生網路或資料庫錯誤，本次講稿<span class="text-rose-600 font-bold underline">沒有儲存成功</span>。<br><br>錯誤原因：${err.message}`,
+            false
+          );
         }
       } finally {
         saveBtn.disabled = false;
         saveBtn.innerHTML = originalHtml;
+      }
+
+      if (shouldRetry) {
+        await window.saveScriptToFirestore();
       }
     };
 
@@ -692,7 +827,9 @@
       const enteredPassword = await promptAdminPassword(`從雲端刪除「${currentScript.title}」`);
       if (!enteredPassword) return;
 
+      let shouldRetry = false;
       const docRef = doc(db, COLLECTION_NAME, currentScript.id);
+
       try {
         await setDoc(docRef, { adminKey: enteredPassword }, { merge: true });
         await deleteDoc(docRef);
@@ -705,11 +842,23 @@
         await fetchCloudScripts('default');
       } catch (err) {
         console.error("刪除失敗:", err);
-        if (err.code === 'permission-denied' || (err.message && err.message.includes('Missing or insufficient permissions'))) {
-          showToast("❌ 管理員密碼錯誤！無法刪除此雲端講稿。", true);
+        const isAuthError = err.code === 'permission-denied' ||
+          (err.message && (err.message.includes('Missing or insufficient permissions') || err.message.includes('PERMISSION_DENIED')));
+
+        if (isAuthError) {
+          showToast("❌ 管理員密碼錯誤！雲端講稿「沒有刪除成功」。", true);
+          shouldRetry = await showErrorAlertModal(
+            "密碼錯誤，沒有刪除成功",
+            `您輸入的管理員密碼不正確，雲端講稿「<strong>${currentScript.title}</strong>」<span class="text-rose-600 font-bold underline">沒有刪除成功</span>。`,
+            true
+          );
         } else {
           showToast(`❌ 刪除失敗：${err.message}`, true);
         }
+      }
+
+      if (shouldRetry) {
+        await window.deleteCurrentCloudScript();
       }
     };
 
@@ -907,7 +1056,7 @@
       item.templateEn.forEach((part, i) => {
         fullSentence += part;
         if (i < item.placeholders.length) {
-          const inputVal = document.getElementById(`input-${secIdx}-${itemIdx}-${i}`).value.trim();
+          const inputVal = document.getElementById(`input-${secIdx}-${itemIdx}-${i}`)?.value.trim();
           fullSentence += inputVal || item.placeholders[i];
         }
       });
@@ -963,10 +1112,11 @@
     };
 
     // =========================================================================
-    // 7. 句型編輯與畫面渲染
+    // 7. 原地行內編輯（Inline Edit）與畫面渲染
     // =========================================================================
     window.mergeWithPrevious = async function(secIdx, itemIdx) {
       if (itemIdx <= 0) return;
+      editingTarget = { secIdx: null, itemIdx: null };
       const items = currentScript.sections[secIdx].items;
       const prev = items[itemIdx - 1];
       const curr = items[itemIdx];
@@ -985,20 +1135,56 @@
       }
     };
 
-    window.editSentence = async function(secIdx, itemIdx) {
-      const item = currentScript.sections[secIdx].items[itemIdx];
-      const currentEn = item.templateEn ? item.templateEn.join('___') : item.en;
-      const newEn = prompt('編輯英文句子（使用 ___ 代表填空欄位）：', currentEn);
-      if (newEn === null) return;
-      const newZh = prompt('編輯中文提示（留空則自動翻譯成繁體中文）：', item.zh || '');
-      if (newZh === null) return;
-
-      const trimmedZh = newZh.trim();
-      currentScript.sections[secIdx].items[itemIdx] = buildSentenceItem(newEn.trim(), trimmedZh, item.isAnswer);
+    // 切換為左側原地編輯狀態（不彈出新視窗）
+    window.editSentence = function(secIdx, itemIdx) {
+      editingTarget = { secIdx, itemIdx };
       renderScript(currentScript);
 
-      if (!trimmedZh) {
+      setTimeout(() => {
+        const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
+        if (enInput) {
+          enInput.focus();
+          const len = enInput.value.length;
+          enInput.setSelectionRange(len, len);
+        }
+      }, 20);
+    };
+
+    window.cancelInlineEdit = function() {
+      editingTarget = { secIdx: null, itemIdx: null };
+      renderScript(currentScript);
+    };
+
+    window.saveInlineEdit = async function(secIdx, itemIdx) {
+      const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
+      const zhInput = document.getElementById(`edit-zh-${secIdx}-${itemIdx}`);
+      if (!enInput || !zhInput) return;
+
+      const item = currentScript.sections[secIdx].items[itemIdx];
+      const newEn = enInput.value.trim();
+      const newZh = zhInput.value.trim();
+
+      if (!newEn) {
+        enInput.focus();
+        return;
+      }
+
+      currentScript.sections[secIdx].items[itemIdx] = buildSentenceItem(newEn, newZh, item.isAnswer);
+      editingTarget = { secIdx: null, itemIdx: null };
+      renderScript(currentScript);
+
+      if (!newZh) {
         await autoTranslateMissingChinese(currentScript, true);
+      }
+    };
+
+    window.handleInlineEditKeydown = function(event, secIdx, itemIdx) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        window.saveInlineEdit(secIdx, itemIdx);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        window.cancelInlineEdit();
       }
     };
 
@@ -1058,10 +1244,62 @@
 
         let itemsHtml = sec.items.map((item, iIdx) => {
           const rowId = `row-${sIdx}-${iIdx}`;
+          const isEditingThisRow = editingTarget.secIdx === sIdx && editingTarget.itemIdx === iIdx;
+
+          // 原地行內編輯模式（直接替換左側句子與中文提示為輸入框）
+          if (isEditingThisRow) {
+            const rawEn = item.templateEn ? item.templateEn.join('___') : (item.en || '');
+            const rawZh = item.zh || '';
+            const safePreviewText = rawEn.replace(/___/g, 'something').replace(/'/g, "\\'");
+
+            return `
+              <div id="${rowId}" class="p-3.5 rounded-xl bg-sky-50/90 border-2 border-sky-400 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition">
+                <div class="flex-1 space-y-2">
+                  <div>
+                    <label class="block text-[11px] font-bold text-sky-800 mb-0.5">英文句子（輸入 <code class="bg-sky-100 px-1 rounded">___</code> 可自動轉為填空欄位）</label>
+                    <input
+                      id="edit-en-${sIdx}-${iIdx}"
+                      type="text"
+                      value="${escapeAttr(rawEn)}"
+                      onkeydown="handleInlineEditKeydown(event, ${sIdx}, ${iIdx})"
+                      placeholder="輸入英文句子..."
+                      class="en-font w-full px-3 py-1.5 text-base font-medium text-slate-900 bg-white border border-sky-300 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-600 mb-0.5">中文提示（留空按完成會自動翻譯成繁體中文）</label>
+                    <input
+                      id="edit-zh-${sIdx}-${iIdx}"
+                      type="text"
+                      value="${escapeAttr(rawZh)}"
+                      onkeydown="handleInlineEditKeydown(event, ${sIdx}, ${iIdx})"
+                      placeholder="輸入中文提示或留空自動翻譯..."
+                      class="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                    />
+                  </div>
+                  <div class="flex items-center gap-2 pt-0.5">
+                    <button onclick="saveInlineEdit(${sIdx}, ${iIdx})" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition">
+                      ✅ 完成
+                    </button>
+                    <button onclick="cancelInlineEdit()" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition">
+                      ✕ 取消
+                    </button>
+                    <span class="text-[11px] text-slate-400">按 Enter 儲存 • Esc 取消</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                  <button onclick="speakText('${safePreviewText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+                    🔊 試聽
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
           const toolBtns = `
-            <div class="flex items-center gap-1 opacity-60 hover:opacity-100 transition">
+            <div class="flex items-center gap-1 opacity-75 hover:opacity-100 transition">
               ${iIdx > 0 ? `<button onclick="mergeWithPrevious(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200/80 hover:bg-slate-300 text-slate-600" title="與上一句合併">⬆️ 合併</button>` : ''}
-              <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200/80 hover:bg-slate-300 text-slate-600" title="編輯句子">✏️</button>
+              <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200/80 hover:bg-sky-200 text-slate-700" title="直接在此處編輯中英文">✏️</button>
             </div>
           `;
 
@@ -1097,14 +1335,17 @@
             const safeText = item.en.replace(/'/g, "\\'");
             return `
               <div id="${rowId}" class="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-3">
-                <div class="flex items-center gap-3 flex-wrap">
-                  <button onclick="this.nextElementSibling.classList.toggle('blur-sm')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-md font-bold transition">
-                    👀 點擊揭曉答案
-                  </button>
-                  <div class="blur-sm transition duration-200 select-none">
-                    <span class="en-font text-lg font-bold text-emerald-800">${item.en}</span>
-                    ${item.zh ? `<span class="text-xs text-emerald-600 ml-2">${item.zh}</span>` : ''}
+                <div class="flex-1 flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-3 flex-wrap">
+                    <button onclick="this.nextElementSibling.classList.toggle('blur-sm')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-md font-bold transition">
+                      👀 點擊揭曉答案
+                    </button>
+                    <div class="blur-sm transition duration-200 select-none">
+                      <span class="en-font text-lg font-bold text-emerald-800">${item.en}</span>
+                      ${item.zh ? `<span class="text-xs text-emerald-600 ml-2">${item.zh}</span>` : ''}
+                    </div>
                   </div>
+                  ${toolBtns}
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
                   <button onclick="speakText('${safeText}', 'global', '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
@@ -1172,6 +1413,7 @@
       const file = event.target.files[0];
       if (!file) return;
 
+      editingTarget = { secIdx: null, itemIdx: null };
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let reconstructedLines = [];
@@ -1233,7 +1475,6 @@
 
       event.target.value = '';
 
-      // 匯入後立即檢查：若無中文註解，自動逐句翻譯成繁體中文
       const translatedCount = await autoTranslateMissingChinese(currentScript, true);
       if (translatedCount === 0) {
         showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」並輸入管理密碼保存。`);
@@ -1263,7 +1504,7 @@
       return {
         en: cleanEn,
         zh: zhText || '',
-        isAnswer
+        isAnswer: Boolean(isAnswer)
       };
     }
 
