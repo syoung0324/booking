@@ -1060,7 +1060,7 @@ window.togglePlayAll = function() {
 };
 
 // =========================================================================
-// 6. 空白欄位輸入、自動翻譯、查字典與原地行內編輯
+// 6. 空白欄位輸入（自動依內容延展不截斷）、自動翻譯、查字典與原地行內編輯
 // =========================================================================
 window.handleBlankInput = function(secIdx, itemIdx, pIdx, value) {
   const item = currentScript.sections[secIdx]?.items[itemIdx];
@@ -1069,6 +1069,12 @@ window.handleBlankInput = function(secIdx, itemIdx, pIdx, value) {
     item.filledValues = Array(item.placeholders.length).fill('');
   }
   item.filledValues[pIdx] = value;
+
+  // 同步隱藏測量文字寬度，讓輸入框隨字數自動撐寬不被截斷
+  const mirrorEl = document.getElementById(`mirror-${secIdx}-${itemIdx}-${pIdx}`);
+  if (mirrorEl) {
+    mirrorEl.textContent = value || item.placeholders[pIdx] || '輸入單字';
+  }
 
   const lookupBtn = document.getElementById(`lookup-btn-${secIdx}-${itemIdx}-${pIdx}`);
   if (lookupBtn) {
@@ -1282,23 +1288,31 @@ function renderScript(data) {
           if (pIdx < item.placeholders.length) {
             const curVal = filledVals[pIdx] || '';
             const hintWord = curVal || item.placeholders[pIdx];
+            const mirrorDisplay = curVal || item.placeholders[pIdx] || '輸入單字';
             sentenceHtml += `
-              <span class="inline-flex items-center mx-1.5 my-0.5 bg-indigo-50 border-b-2 border-indigo-400 rounded-t px-1">
-                <input
-                  id="input-${sIdx}-${iIdx}-${pIdx}"
-                  type="text"
-                  value="${escapeAttr(curVal)}"
-                  placeholder="${escapeAttr(item.placeholders[pIdx])}"
-                  oninput="handleBlankInput(${sIdx}, ${iIdx}, ${pIdx}, this.value)"
-                  onblur="translateFilledSentence(${sIdx}, ${iIdx})"
-                  onkeydown="handleBlankKeydown(event, ${sIdx}, ${iIdx})"
-                  class="blank-word-input px-1.5 py-0.5 w-28 text-center font-bold text-indigo-700 bg-transparent focus:outline-none"
-                />
+              <span class="inline-flex items-center max-w-full mx-1.5 my-0.5 bg-indigo-50 border-b-2 border-indigo-400 rounded-t px-1">
+                <span class="inline-grid items-center max-w-full">
+                  <span
+                    id="mirror-${sIdx}-${iIdx}-${pIdx}"
+                    aria-hidden="true"
+                    class="invisible whitespace-pre col-start-1 row-start-1 px-2 py-0.5 font-bold pointer-events-none"
+                  >${escapeHtml(mirrorDisplay)}</span>
+                  <input
+                    id="input-${sIdx}-${iIdx}-${pIdx}"
+                    type="text"
+                    value="${escapeAttr(curVal)}"
+                    placeholder="${escapeAttr(item.placeholders[pIdx])}"
+                    oninput="handleBlankInput(${sIdx}, ${iIdx}, ${pIdx}, this.value)"
+                    onblur="translateFilledSentence(${sIdx}, ${iIdx})"
+                    onkeydown="handleBlankKeydown(event, ${sIdx}, ${iIdx})"
+                    class="blank-word-input col-start-1 row-start-1 w-full min-w-[6.5rem] px-2 py-0.5 text-center font-bold text-indigo-700 bg-transparent focus:outline-none"
+                  />
+                </span>
                 <button
                   id="lookup-btn-${sIdx}-${iIdx}-${pIdx}"
                   type="button"
                   onclick="lookupBlankWord(${sIdx}, ${iIdx}, ${pIdx})"
-                  class="text-xs px-1 py-0.5 text-amber-600 hover:text-amber-800 hover:scale-110 transition"
+                  class="text-xs px-1 py-0.5 text-amber-600 hover:text-amber-800 hover:scale-110 transition shrink-0"
                   title="查詢「${escapeAttr(hintWord)}」英漢字典"
                 >📖</button>
               </span>
@@ -1308,7 +1322,7 @@ function renderScript(data) {
 
         return `
           <div id="${rowId}" class="p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
               <div class="en-font text-lg text-slate-800 font-medium flex flex-wrap items-center">${sentenceHtml}</div>
               <div class="flex items-center justify-between mt-1 gap-2">
                 <span id="zh-text-${sIdx}-${iIdx}" class="text-xs text-slate-500">${escapeHtml(item.zh || '⏳ 準備翻譯中文...')}</span>
@@ -1378,7 +1392,7 @@ function renderScript(data) {
           <div class="text-xs font-bold text-slate-600 mt-2">${escapeHtml(sec.titleZh || '口說練習段落')}</div>
         </div>
 
-        <div class="flex-1">
+        <div class="flex-1 min-w-0">
           <div class="flex items-center justify-between mb-3">
             <h3 class="en-font text-xl font-bold ${theme.title} flex items-center gap-2">
               <span>${sec.icon}</span> ${escapeHtml(sec.titleEn)}
