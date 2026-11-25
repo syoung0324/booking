@@ -8,29 +8,29 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <link rel="stylesheet" href="./style.css" />
 </head>
-<body class="text-slate-800 pb-16">
+<body class="text-slate-800 pb-20">
 
-  <!-- 頂部控制列 -->
-  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-sky-100 shadow-sm">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2.5">
-      <div class="flex items-center gap-2.5">
-        <span class="text-3xl">🎙️</span>
+  <!-- 頂部工具列（精簡貼齊版面） -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-2xs">
+    <div class="max-w-4xl mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">📄</span>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-lg font-bold text-sky-900 leading-tight">英文口說圖文有聲講稿</h1>
+            <h1 class="text-base font-bold text-slate-800 leading-tight">英文口說有聲講義</h1>
             <span id="cloudStatus" class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-              ⏳ 連線雲端中...
+              ⏳ 連線中...
             </span>
           </div>
-          <p class="text-xs text-slate-500">反白單字查英漢字典 • PDF 自動中譯 • Firestore 同步</p>
+          <p class="text-[11px] text-slate-500">反白單字查英漢字典 • 填空自動翻譯 • 雲端同步</p>
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-1.5">
         <!-- 雲端講稿選擇器 -->
-        <div class="flex items-center gap-1 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1.5">
-          <span class="text-xs font-bold text-indigo-700 shrink-0">📚 講稿庫：</span>
-          <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-indigo-900 focus:outline-none max-w-[150px]">
+        <div class="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
+          <span class="text-xs font-bold text-slate-700 shrink-0">📚 講稿：</span>
+          <select id="savedScriptsSelect" onchange="loadSelectedScript(this.value)" class="text-xs bg-transparent font-medium text-slate-900 focus:outline-none max-w-[145px]">
             <option value="default">預設範例 (11/13)</option>
           </select>
           <button id="deleteCloudBtn" onclick="deleteCurrentCloudScript()" class="hidden text-xs text-rose-500 hover:text-rose-700 px-1 font-bold" title="刪除此雲端講稿（需管理密碼）">
@@ -39,53 +39,53 @@
         </div>
 
         <!-- 語調選擇 -->
-        <div class="flex items-center gap-1.5 bg-sky-50/80 border border-sky-200 rounded-lg px-2.5 py-1.5">
-          <div class="flex flex-col leading-none shrink-0">
-            <span class="text-xs font-bold text-sky-900">🗣️ 語調</span>
-            <span class="text-[10px] text-sky-600 mt-0.5">(可選不同的語調)</span>
-          </div>
-          <select id="voiceSelect" onchange="handleVoiceChange(this.value)" class="text-xs bg-white border border-sky-200 rounded-md px-2 py-1 text-slate-700 font-medium focus:outline-none focus:border-sky-400 max-w-[165px]">
-            <option value="">載入語調中...</option>
+        <div class="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5">
+          <span class="text-xs font-bold text-slate-700 shrink-0">🗣️ 語調：</span>
+          <select id="voiceSelect" onchange="handleVoiceChange(this.value)" class="text-xs bg-white border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 font-medium focus:outline-none focus:border-sky-400 max-w-[155px]">
+            <option value="">載入中...</option>
           </select>
         </div>
 
         <!-- 連續播放 -->
-        <button id="playAllBtn" onclick="togglePlayAll()" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 text-amber-950 font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition">
+        <button id="playAllBtn" onclick="togglePlayAll()" class="flex items-center gap-1 bg-amber-400 hover:bg-amber-500 text-amber-950 font-bold text-xs px-2.5 py-1.5 rounded-lg transition">
           <span>▶️</span> 連續播放
         </button>
 
         <!-- 匯入 PDF -->
-        <label class="flex items-center gap-1 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-sm cursor-pointer transition">
+        <label class="flex items-center gap-1 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg cursor-pointer transition">
           <span>📄</span> 匯入 PDF
           <input type="file" id="pdfUpload" accept="application/pdf" class="hidden" onchange="handlePdfUpload(event)" />
         </label>
 
         <!-- 一鍵補齊中文翻譯 -->
-        <button id="translateBtn" onclick="triggerManualTranslate()" class="flex items-center gap-1 bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition" title="自動為缺少中文註解或已填入單字的句子補齊翻譯">
+        <button id="translateBtn" onclick="triggerManualTranslate()" class="flex items-center gap-1 bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition" title="自動為缺少中文註解或已填入單字的句子補齊翻譯">
           <span>🌐</span> 補齊翻譯
         </button>
 
         <!-- 儲存至 Firestore -->
-        <button id="saveCloudBtn" onclick="saveScriptToFirestore()" class="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-lg shadow-sm transition">
-          <span>☁️</span> 儲存至雲端
+        <button id="saveCloudBtn" onclick="saveScriptToFirestore()" class="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg transition">
+          <span>☁️</span> 儲存雲端
         </button>
       </div>
     </div>
   </header>
 
-  <!-- 主內容區 -->
-  <main class="max-w-5xl mx-auto px-4 mt-6">
+  <!-- 主內容區：模擬原始 PDF 紙張文件排版 -->
+  <main class="max-w-4xl mx-auto px-3 sm:px-6 mt-6">
     <!-- 狀態提示列 -->
-    <div id="statusToast" class="hidden mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl text-sm flex items-center justify-between shadow-sm">
+    <div id="statusToast" class="hidden mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-2.5 rounded-lg text-sm flex items-center justify-between">
       <span id="statusToastMsg" class="font-medium">✅ 操作完成</span>
       <button onclick="this.parentElement.classList.add('hidden')" class="text-current opacity-70 hover:opacity-100 font-bold ml-3">✕</button>
     </div>
 
-    <!-- 活動資訊橫幅（支援原地行內編輯） -->
-    <div id="bannerCard" class="bg-gradient-to-r from-sky-500 to-indigo-600 rounded-2xl p-6 text-white shadow-md mb-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4"></div>
+    <!-- 類 PDF 白紙講義容器 -->
+    <article class="pdf-paper bg-white border border-slate-200/90 shadow-sm rounded-xl px-6 py-8 sm:px-12 sm:py-10">
+      <!-- 文件標題區（貼近 PDF 頂部標題與連結） -->
+      <header id="bannerCard" class="pb-5 mb-7 border-b-2 border-slate-800"></header>
 
-    <!-- 講稿卡片容器 -->
-    <div id="scriptContainer" class="space-y-6"></div>
+      <!-- 講稿段落區（貼近 PDF 條列與段落順序） -->
+      <div id="scriptContainer" class="space-y-8"></div>
+    </article>
   </main>
 
   <!-- 選取文字時出現的可愛浮動查字典小按鈕 -->
@@ -101,7 +101,6 @@
   <!-- 可愛英漢字典小對話框 -->
   <div id="dictModal" class="hidden fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-xs flex items-center justify-center p-4">
     <div class="dict-pop bg-white rounded-3xl shadow-2xl border-4 border-amber-200 max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]">
-      <!-- 可愛頂部標題列 -->
       <div class="bg-gradient-to-r from-amber-300 via-yellow-200 to-sky-200 px-5 py-3.5 flex items-center justify-between border-b-2 border-amber-200">
         <div class="flex items-center gap-2">
           <span class="text-2xl">🦉</span>
@@ -120,7 +119,6 @@
         </button>
       </div>
 
-      <!-- 單字搜尋欄 -->
       <div class="px-5 pt-3.5 pb-2.5 bg-amber-50/50 border-b border-amber-100">
         <form id="dictSearchForm" class="flex items-center gap-2">
           <input
@@ -139,7 +137,6 @@
         </form>
       </div>
 
-      <!-- 查詢結果內容區 -->
       <div id="dictResultBody" class="p-5 overflow-y-auto space-y-3.5 text-sm"></div>
     </div>
   </div>
@@ -193,7 +190,6 @@
     </div>
   </div>
 
-  <!-- 載入外部模組化 JavaScript -->
   <script type="module" src="./app.js"></script>
 </body>
 </html>

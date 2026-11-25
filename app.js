@@ -30,6 +30,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const COLLECTION_NAME = "speaking_club_scripts";
+const LOCAL_AVATAR_KEY = "speaking_club_cute_avatar";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -193,11 +194,15 @@ function buildFilledSentenceText(item) {
       fullSentence += val || item.placeholders[i];
     }
   });
-  return fullSentence.replace(/\s+/g, ' ').trim();
+  return fullSentence.replace(/[^\S\n]+/g, ' ').trim();
 }
 
 function hasAnyFilledBlank(item) {
   return Array.isArray(item?.filledValues) && item.filledValues.some(v => (v || '').trim().length > 0);
+}
+
+function cleanSubHeadingText(text) {
+  return String(text || '').replace(/^[.．:：|｜\-\s]+/, '').trim();
 }
 
 async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, forceRetranslateFilled = false) {
@@ -206,9 +211,10 @@ async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, force
   const tasks = [];
 
   scriptObj.sections.forEach(sec => {
-    if ((!sec.titleZh || !sec.titleZh.trim() || sec.titleZh === '口說練習段落') && sec.titleEn && !/^Part\s*\d+$/i.test(sec.titleEn)) {
+    const cleanTitle = cleanSubHeadingText(sec.titleEn);
+    if ((!sec.titleZh || !sec.titleZh.trim() || sec.titleZh === '口說練習段落') && cleanTitle && !/^(Part|Step)\s*\d+$/i.test(cleanTitle)) {
       tasks.push(async () => {
-        const zhTitle = await translateEnToZhTW(sec.titleEn);
+        const zhTitle = await translateEnToZhTW(cleanTitle);
         if (zhTitle) sec.titleZh = zhTitle;
       });
     }
@@ -225,7 +231,7 @@ async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, force
           });
         } else if (!hasZh) {
           tasks.push(async () => {
-            const templateStr = item.templateEn.join(' [___] ').replace(/\s+/g, ' ').trim();
+            const templateStr = item.templateEn.join(' [___] ').replace(/[^\S\n]+/g, ' ').trim();
             const zh = await translateEnToZhTW(templateStr);
             if (zh) item.zh = `${zh}（填入單字後自動翻譯）`;
           });
@@ -270,7 +276,7 @@ async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, force
     translateBtn.innerHTML = origBtnHtml;
   }
 
-  showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！請點擊「☁️ 儲存至雲端」保存。`);
+  showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！請點擊「☁️ 儲存雲端」保存。`);
   return tasks.length;
 }
 
@@ -279,78 +285,18 @@ window.triggerManualTranslate = async function() {
 };
 
 // =========================================================================
-// 3. 預設範本與主題插圖生成器
+// 3. 預設範本資料
 // =========================================================================
-function getIllustrationSvg(keywordText, fallbackIdx = 0) {
-  const text = (keywordText || '').toLowerCase();
-  if (text.includes('mystery') || text.includes('guess') || text.includes('pencil') || text.includes('object')) {
-    return `
-      <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
-        <rect x="10" y="10" width="100" height="100" rx="20" fill="#d1fae5"/>
-        <g transform="rotate(-35 60 60)">
-          <rect x="52" y="25" width="16" height="58" rx="2" fill="#facc15" stroke="#ca8a04" stroke-width="2"/>
-          <rect x="52" y="20" width="16" height="8" rx="2" fill="#f472b6" stroke="#db2777" stroke-width="2"/>
-          <polygon points="52,83 68,83 60,98" fill="#fde68a" stroke="#ca8a04" stroke-width="2"/>
-          <polygon points="58,93 62,93 60,98" fill="#1e293b"/>
-        </g>
-        <text x="82" y="42" font-size="22" font-weight="bold" fill="#059669">?</text>
-      </svg>`;
-  }
-  if (text.includes('dinner') || text.includes('food') || text.includes('eat') || text.includes('lunch') || text.includes('breakfast')) {
-    return `
-      <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
-        <rect x="10" y="10" width="100" height="100" rx="20" fill="#fef3c7"/>
-        <circle cx="60" cy="62" r="32" fill="#ffffff" stroke="#f59e0b" stroke-width="3"/>
-        <circle cx="60" cy="62" r="24" fill="none" stroke="#fde68a" stroke-width="2" stroke-dasharray="4 3"/>
-        <circle cx="52" cy="56" r="8" fill="#ef4444"/>
-        <path d="M62 66 Q72 52 76 68 Z" fill="#22c55e"/>
-        <rect x="48" y="68" width="16" height="6" rx="3" fill="#f97316"/>
-      </svg>`;
-  }
-  if (text.includes('bingo') || text.includes('grid') || text.includes('5x5')) {
-    return `
-      <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
-        <rect x="10" y="10" width="100" height="100" rx="20" fill="#f3e8ff"/>
-        <g transform="translate(25, 25)">
-          <rect x="0" y="0" width="70" height="70" rx="6" fill="#ffffff" stroke="#9333ea" stroke-width="2"/>
-          <line x1="23" y1="0" x2="23" y2="70" stroke="#d8b4fe" stroke-width="2"/>
-          <line x1="47" y1="0" x2="47" y2="70" stroke="#d8b4fe" stroke-width="2"/>
-          <line x1="0" y1="23" x2="70" y2="23" stroke="#d8b4fe" stroke-width="2"/>
-          <line x1="0" y1="47" x2="70" y2="47" stroke="#d8b4fe" stroke-width="2"/>
-          <line x1="5" y1="5" x2="65" y2="65" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>
-          <circle cx="12" cy="12" r="5" fill="#facc15"/>
-          <circle cx="35" cy="35" r="5" fill="#facc15"/>
-          <circle cx="58" cy="58" r="5" fill="#facc15"/>
-        </g>
-      </svg>`;
-  }
-  if (text.includes('number') || text.includes('bigger') || text.includes('count') || text.includes('math')) {
-    return `
-      <svg viewBox="0 0 120 120" class="w-24 h-24 mx-auto">
-        <rect x="10" y="10" width="100" height="100" rx="20" fill="#e0f2fe"/>
-        <rect x="22" y="45" width="32" height="36" rx="8" fill="#bae6fd" stroke="#0284c7" stroke-width="2"/>
-        <text x="38" y="69" text-anchor="middle" font-size="16" font-weight="bold" fill="#0369a1">28</text>
-        <rect x="64" y="32" width="36" height="49" rx="8" fill="#0284c7"/>
-        <text x="82" y="63" text-anchor="middle" font-size="20" font-weight="bold" fill="#ffffff">45</text>
-        <text x="58" y="35" text-anchor="middle" font-size="14" font-weight="bold" fill="#0284c7">&lt;</text>
-      </svg>`;
-  }
-  const fallbackIcons = ['🗣️', '📘', '🌟', '🎯'];
-  const bgColors = ['bg-emerald-100', 'bg-amber-100', 'bg-sky-100', 'bg-purple-100'];
-  return `<div class="w-24 h-24 rounded-2xl ${bgColors[fallbackIdx % 4]} flex items-center justify-center text-4xl mx-auto">${fallbackIcons[fallbackIdx % 4]}</div>`;
-}
-
 const defaultScriptData = {
   id: "default",
   title: "Speaking Club 11/13 8pm",
   meetUrl: "https://meet.google.com/ppf-tncw-krk",
+  avatarUrl: "",
   sections: [
     {
       part: "Part 1",
       titleEn: "Mystery Object: Show & Guess",
       titleZh: "給提示猜物品",
-      icon: "🔍",
-      color: "emerald",
       items: [
         { en: "Ex: It's yellow.", zh: "範例：它是黃色的。" },
         { en: "It's long.", zh: "它是長長的。" },
@@ -363,8 +309,6 @@ const defaultScriptData = {
       part: "Part 2",
       titleEn: "My Dream Dinner Challenge",
       titleZh: "畫出晚餐",
-      icon: "🍽️",
-      color: "amber",
       items: [
         {
           templateEn: ["For dinner, I have ", " and ", "."],
@@ -390,8 +334,6 @@ const defaultScriptData = {
       part: "Part 3",
       titleEn: "Bigger Numbers!",
       titleZh: "聽句子，寫出比較大的數字",
-      icon: "🔢",
-      color: "sky",
       items: [
         { en: "Listen to the sentences and write down the bigger number.", zh: "聽句子，寫出比較大的數字。" }
       ]
@@ -400,8 +342,6 @@ const defaultScriptData = {
       part: "Part 4",
       titleEn: "Number Bingo: 26–51",
       titleZh: "數字賓果",
-      icon: "🎯",
-      color: "purple",
       items: [
         { en: "Draw a 5x5 grid and write 25 different numbers from 26 to 51.", zh: "畫出 5x5 格，填入 26 到 51 之間 25 個不同數字。" },
         { en: "The teacher calls out the number.", zh: "老師唸數字。" },
@@ -452,7 +392,7 @@ function escapeHtml(str) {
 }
 
 // =========================================================================
-// 4. Firestore 讀寫與刪除邏輯（含填空單字同步與密碼錯誤明確警示）
+// 4. Firestore 讀寫與刪除邏輯（含填空單字同步與頭像保存）
 // =========================================================================
 async function fetchCloudScripts(selectIdAfterLoad = null) {
   const statusBadge = document.getElementById('cloudStatus');
@@ -479,7 +419,7 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
       selectEl.appendChild(opt);
     });
 
-    statusBadge.textContent = `🟢 雲端已連線 (${savedScriptsMap.size} 份)`;
+    statusBadge.textContent = `🟢 已連線 (${savedScriptsMap.size} 份)`;
     statusBadge.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800";
 
     if (selectIdAfterLoad && savedScriptsMap.has(selectIdAfterLoad)) {
@@ -492,7 +432,7 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
     }
   } catch (err) {
     console.error("Firestore 讀取失敗:", err);
-    statusBadge.textContent = "🔴 雲端連線異常";
+    statusBadge.textContent = "🔴 連線異常";
     statusBadge.className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800";
     showToast(`⚠️ 無法讀取 Firestore：${err.message}`, true);
   }
@@ -541,7 +481,7 @@ window.saveScriptToFirestore = async function() {
   const saveBtn = document.getElementById('saveCloudBtn');
   const originalHtml = saveBtn.innerHTML;
   saveBtn.disabled = true;
-  saveBtn.innerHTML = '<span>⏳</span> 驗證並儲存中...';
+  saveBtn.innerHTML = '<span>⏳</span> 儲存中...';
 
   let shouldRetry = false;
 
@@ -549,10 +489,8 @@ window.saveScriptToFirestore = async function() {
     const cleanSections = sanitizeForFirestore(
       currentScript.sections.map((sec, sIdx) => ({
         part: sec.part || 'Part 1',
-        titleEn: sec.titleEn || '',
-        titleZh: sec.titleZh || '口說練習段落',
-        icon: sec.icon || '🗣️',
-        color: sec.color || 'sky',
+        titleEn: cleanSubHeadingText(sec.titleEn || ''),
+        titleZh: sec.titleZh || '',
         items: (sec.items || []).map((it, iIdx) => {
           if (it.templateEn) {
             const currentFilled = (it.placeholders || []).map((_, pIdx) => {
@@ -584,10 +522,13 @@ window.saveScriptToFirestore = async function() {
       gender: detectVoiceGender(chosenVoice.name)
     } : null;
 
+    const effectiveAvatar = currentScript.avatarUrl || localStorage.getItem(LOCAL_AVATAR_KEY) || '';
+
     const payload = {
       adminKey: enteredPassword,
       title: currentScript.title || "English Speaking Script",
       meetUrl: currentScript.meetUrl || "",
+      avatarUrl: effectiveAvatar,
       voiceProfile,
       sections: cleanSections,
       updatedAt: serverTimestamp()
@@ -611,7 +552,7 @@ window.saveScriptToFirestore = async function() {
       acc + (s.items || []).filter(i => i.zh && i.zh.trim().length > 0).length, 0
     );
 
-    showToast(`✅ 密碼驗證通過，已成功儲存至雲端「${payload.title}」（含 ${zhCount} 句中文翻譯與填空單字）`);
+    showToast(`✅ 已成功儲存至雲端「${payload.title}」（含 ${zhCount} 句中文翻譯與填空單字）`);
     await fetchCloudScripts(savedId);
   } catch (err) {
     console.error("Firestore 儲存失敗:", err);
@@ -656,7 +597,7 @@ window.deleteCurrentCloudScript = async function() {
     await setDoc(docRef, { adminKey: enteredPassword }, { merge: true });
     await deleteDoc(docRef);
 
-    showToast(`🗑️ 密碼驗證通過，已從雲端刪除：「${currentScript.title}」`);
+    showToast(`🗑️ 已從雲端刪除：「${currentScript.title}」`);
     currentScript = structuredClone(defaultScriptData);
     document.getElementById('savedScriptsSelect').value = 'default';
     document.getElementById('deleteCloudBtn').classList.add('hidden');
@@ -685,8 +626,106 @@ window.deleteCurrentCloudScript = async function() {
 };
 
 // =========================================================================
-// 4-1. 活動資訊橫幅（原地行內編輯）
+// 4-1. 可愛插畫風活動資訊標題區（支援插圖上傳壓縮保存、一鍵複製連結與原地編輯）
 // =========================================================================
+function getDefaultCuteAvatarSvg() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fef3c7"/>
+          <stop offset="100%" stop-color="#bae6fd"/>
+        </linearGradient>
+      </defs>
+      <rect width="160" height="160" fill="url(#bg)"/>
+      <circle cx="80" cy="78" r="42" fill="#fde68a"/>
+      <path d="M40 72 C40 36, 120 36, 120 72 C115 54, 45 54, 40 72 Z" fill="#5c4033"/>
+      <circle cx="65" cy="76" r="4.5" fill="#334155"/>
+      <circle cx="95" cy="76" r="4.5" fill="#334155"/>
+      <ellipse cx="56" cy="85" rx="6" ry="3.5" fill="#fda4af" opacity="0.7"/>
+      <ellipse cx="104" cy="85" rx="6" ry="3.5" fill="#fda4af" opacity="0.7"/>
+      <path d="M71 88 Q80 98 89 88" stroke="#e11d48" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+      <path d="M44 148 C48 122, 112 122, 116 148 Z" fill="#1e3a8a"/>
+      <text x="124" y="42" font-size="22">✨</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function getBannerAvatarSrc(data) {
+  if (data?.avatarUrl) return data.avatarUrl;
+  const cached = localStorage.getItem(LOCAL_AVATAR_KEY);
+  if (cached) return cached;
+  return './cute-girl.png';
+}
+
+window.triggerAvatarUpload = function() {
+  let fileInput = document.getElementById('cuteAvatarFileInput');
+  if (!fileInput) {
+    fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.id = 'cuteAvatarFileInput';
+    fileInput.accept = 'image/*';
+    fileInput.className = 'hidden';
+    fileInput.addEventListener('change', window.handleAvatarFileSelected);
+    document.body.appendChild(fileInput);
+  }
+  fileInput.click();
+};
+
+window.handleAvatarFileSelected = function(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const maxDim = 420;
+      let w = img.width;
+      let h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.86);
+      currentScript.avatarUrl = compressedDataUrl;
+      try {
+        localStorage.setItem(LOCAL_AVATAR_KEY, compressedDataUrl);
+      } catch (storageErr) {
+        console.warn('localStorage 容量限制:', storageErr);
+      }
+
+      renderHeaderBanner(currentScript);
+      showToast('🎀 已更新可愛標題插圖！點擊右上角「☁️ 儲存雲端」可同步保存。');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+};
+
+window.copyMeetUrl = function(url) {
+  if (!url) return;
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('📋 已複製 Google Meet 連結！');
+  }).catch(() => {
+    showToast('ℹ️ 請直接點擊連結開啟會議室');
+  });
+};
+
 window.editDocHeader = function() {
   isEditingHeader = true;
   renderHeaderBanner(currentScript);
@@ -739,39 +778,47 @@ function renderHeaderBanner(data) {
 
   const isCloud = data.id && data.id !== 'default';
   const badgeClass = isCloud
-    ? 'inline-block bg-emerald-400/25 text-emerald-100 text-xs font-semibold px-2.5 py-1 rounded-full'
-    : 'inline-block bg-amber-300/25 text-amber-100 text-xs font-semibold px-2.5 py-1 rounded-full';
-  const badgeText = isCloud ? '☁️ 雲端同步講稿' : '本地未儲存 / 範本';
+    ? 'inline-flex items-center gap-1 bg-emerald-100/90 text-emerald-800 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-2xs'
+    : 'inline-flex items-center gap-1 bg-amber-100/90 text-amber-800 border border-amber-200 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-2xs';
+  const badgeText = isCloud ? '☁️ 雲端講義' : '📝 本地範本';
+  const avatarSrc = getBannerAvatarSrc(data);
+  const fallbackSvg = getDefaultCuteAvatarSvg();
 
   if (isEditingHeader) {
     bannerCard.innerHTML = `
-      <div class="flex-1 w-full space-y-3">
-        <div class="flex items-center gap-2">
-          <span class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full">
-            線上口說練習講稿
-          </span>
-          <span class="${badgeClass}">${badgeText}</span>
-          <span class="text-xs text-amber-200 font-bold">✏️ 編輯模式</span>
+      <div class="w-full space-y-3 bg-gradient-to-r from-amber-50/90 via-rose-50/70 to-sky-50/90 p-4 sm:p-5 rounded-2xl border-2 border-amber-200 shadow-xs">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <span class="${badgeClass}">${badgeText}</span>
+            <span class="text-xs text-sky-700 font-bold">✏️ 編輯講義標題、插圖與連結</span>
+          </div>
+          <button
+            type="button"
+            onclick="triggerAvatarUpload()"
+            class="px-3 py-1 bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold rounded-full shadow-2xs transition"
+          >
+            🖼️ 更換可愛插圖
+          </button>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label for="editHeaderTitleInput" class="block text-xs font-bold text-sky-100 mb-1">
-              講稿標題：
+            <label for="editHeaderTitleInput" class="block text-xs font-bold text-slate-700 mb-1">
+              講義主標題：
             </label>
             <input
               id="editHeaderTitleInput"
               type="text"
               value="${escapeAttr(data.title || '')}"
               onkeydown="handleHeaderEditKeydown(event)"
-              placeholder="輸入講稿標題..."
-              class="en-font w-full px-3.5 py-2 text-base md:text-lg font-bold text-slate-900 bg-white border-2 border-amber-300 rounded-xl shadow-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+              placeholder="輸入講義標題..."
+              class="en-font w-full px-3.5 py-2 text-lg font-bold text-slate-900 bg-white border-2 border-amber-200 rounded-xl focus:outline-none focus:border-sky-400"
             />
           </div>
 
           <div>
-            <label for="editHeaderMeetInput" class="block text-xs font-bold text-sky-100 mb-1">
-              Google Meet 教室連結（留空則隱藏）：
+            <label for="editHeaderMeetInput" class="block text-xs font-bold text-slate-700 mb-1">
+              Google Meet 連結（留空則隱藏）：
             </label>
             <input
               id="editHeaderMeetInput"
@@ -779,7 +826,7 @@ function renderHeaderBanner(data) {
               value="${escapeAttr(data.meetUrl || '')}"
               onkeydown="handleHeaderEditKeydown(event)"
               placeholder="https://meet.google.com/..."
-              class="font-mono w-full px-3.5 py-2 text-sm font-medium text-slate-900 bg-white border-2 border-sky-200 rounded-xl shadow-xs focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-200"
+              class="font-mono w-full px-3.5 py-2 text-sm text-slate-900 bg-white border-2 border-amber-200 rounded-xl focus:outline-none focus:border-sky-400"
             />
           </div>
         </div>
@@ -788,18 +835,18 @@ function renderHeaderBanner(data) {
           <button
             type="button"
             onclick="saveHeaderEdit()"
-            class="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg shadow-sm transition"
+            class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-full shadow-2xs transition"
           >
             ✅ 完成修改
           </button>
           <button
             type="button"
             onclick="cancelHeaderEdit()"
-            class="px-3.5 py-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-bold rounded-lg transition"
+            class="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold rounded-full transition"
           >
             ✕ 取消
           </button>
-          <span class="text-xs text-sky-100/90 ml-1">按 Enter 套用 • Esc 取消</span>
+          <span class="text-xs text-slate-400 ml-1">按 Enter 套用 • Esc 取消</span>
         </div>
       </div>
     `;
@@ -809,38 +856,94 @@ function renderHeaderBanner(data) {
   const safeTitle = escapeHtml(data.title || 'English Speaking Script');
   const meetUrl = (data.meetUrl || '').trim();
   const normalizedHref = meetUrl && !/^https?:\/\//i.test(meetUrl) ? `https://${meetUrl}` : meetUrl;
-  const displayMeetText = escapeHtml(meetUrl.replace(/^https?:\/\//i, ''));
+  const displayMeetText = escapeHtml(meetUrl);
 
   bannerCard.innerHTML = `
-    <div class="flex-1">
-      <div class="flex items-center gap-2 mb-2">
-        <span class="inline-block bg-white/20 text-xs font-semibold px-3 py-1 rounded-full">
-          線上口說練習講稿
-        </span>
-        <span id="docSourceBadge" class="${badgeClass}">
-          ${badgeText}
-        </span>
+    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-50/95 via-rose-50/70 to-sky-50/95 border-2 border-amber-200/80 p-4 sm:p-5 shadow-xs">
+      <!-- 可愛背景光暈點綴 -->
+      <div class="pointer-events-none absolute -right-6 -top-6 w-28 h-28 rounded-full bg-sky-200/30 blur-xl"></div>
+      <div class="pointer-events-none absolute right-24 -bottom-8 w-24 h-24 rounded-full bg-amber-200/35 blur-xl"></div>
+
+      <div class="relative flex flex-col sm:flex-row items-center sm:items-center gap-4 sm:gap-5">
+        <!-- 左側：可愛動漫女孩圓角相框（點擊可更換圖片） -->
+        <div class="relative group shrink-0">
+          <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-[3px] border-white shadow-md ring-2 ring-amber-300/90 bg-amber-100">
+            <img
+              src="${escapeAttr(avatarSrc)}"
+              onerror="this.onerror=null; this.src='${escapeAttr(fallbackSvg)}';"
+              alt="Speaking Club Cute Host"
+              class="w-full h-full object-cover object-top transition duration-300 group-hover:scale-105"
+            />
+          </div>
+          <!-- 右上角可愛小徽章 -->
+          <span class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-amber-400 text-white text-sm flex items-center justify-center shadow-xs border-2 border-white select-none">
+            ✨
+          </span>
+          <!-- 懸浮換圖按鈕 -->
+          <button
+            type="button"
+            onclick="triggerAvatarUpload()"
+            class="absolute inset-x-1.5 bottom-1.5 py-1 px-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white text-[11px] font-bold opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition flex items-center justify-center gap-1 shadow-xs"
+            title="點擊選擇電腦或手機中的可愛圖片"
+          >
+            <span>🖼️</span>
+            <span>換圖片</span>
+          </button>
+        </div>
+
+        <!-- 右側：活動資訊欄 -->
+        <div class="flex-1 min-w-0 w-full text-center sm:text-left">
+          <div class="flex flex-wrap items-center justify-center sm:justify-between gap-2 mb-1.5">
+            <span class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-white/90 border border-amber-200 text-amber-800 text-xs font-extrabold tracking-wide shadow-2xs">
+              <span>🎙️</span>
+              <span>English Speaking Club</span>
+            </span>
+            <span id="docSourceBadge" class="${badgeClass}">
+              ${badgeText}
+            </span>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+            <h2 id="docTitle" class="en-font text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
+              ${safeTitle}
+            </h2>
+            <button
+              type="button"
+              onclick="editDocHeader()"
+              class="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-white/80 hover:bg-white border border-amber-200 px-2.5 py-1 rounded-full shadow-2xs transition"
+              title="編輯標題與連結"
+            >
+              <span>✏️</span>
+              <span>編輯</span>
+            </button>
+          </div>
+
+          ${meetUrl ? `
+            <div id="meetLinkBox" class="mt-3 inline-flex flex-wrap items-center justify-center sm:justify-start gap-2 px-3.5 py-2 rounded-xl bg-white/90 border border-sky-200/90 shadow-2xs max-w-full">
+              <span class="inline-flex items-center gap-1 text-xs font-extrabold text-sky-800 shrink-0">
+                <span>📹</span>
+                <span>Google Meet 連結：</span>
+              </span>
+              <a
+                href="${escapeAttr(normalizedHref)}"
+                target="_blank"
+                class="font-mono text-xs sm:text-sm font-semibold text-sky-700 hover:text-sky-900 underline break-all"
+              >
+                ${displayMeetText}
+              </a>
+              <button
+                type="button"
+                onclick="copyMeetUrl('${escapeAttr(normalizedHref)}')"
+                class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-100 hover:bg-sky-200 text-sky-800 transition shrink-0"
+                title="複製會議連結"
+              >
+                📋 複製
+              </button>
+            </div>
+          ` : ''}
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <h2 id="docTitle" class="en-font text-2xl md:text-3xl font-bold tracking-wide">
-          ${safeTitle}
-        </h2>
-        <button onclick="editDocHeader()" class="text-xs bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-white font-medium transition" title="直接在此處編輯標題與 Meet 連結">
-          ✏️ 編輯資訊
-        </button>
-      </div>
-      <p id="docSubtitle" class="text-sky-100 text-sm mt-1">
-        選取英文單字可查詢英漢字典；空白欄輸入單字後會自動翻譯並可儲存至雲端
-      </p>
     </div>
-    ${meetUrl ? `
-      <div id="meetLinkBox" class="bg-white/15 backdrop-blur-sm border border-white/25 rounded-xl p-3.5 text-sm shrink-0">
-        <div class="text-xs text-sky-100 mb-1">Google Meet 教室連結：</div>
-        <a href="${escapeAttr(normalizedHref)}" target="_blank" class="font-mono font-bold underline hover:text-amber-200 break-all">
-          ${displayMeetText}
-        </a>
-      </div>
-    ` : ''}
   `;
 }
 
@@ -990,7 +1093,7 @@ window.speakText = function(text, elementId = null, onEndCallback = null) {
     if (el) el.classList.add('speaking-active');
   }
 
-  const cleanSpeech = text.replace(/^Ex:\s*/i, 'Example: ');
+  const cleanSpeech = text.replace(/^Ex:\s*/i, 'Example: ').replace(/\n+/g, '. ');
   const utterance = new SpeechSynthesisUtterance(cleanSpeech);
   const selectedVoiceName = document.getElementById('voiceSelect').value;
   const chosenVoice = voices.find(v => v.name === selectedVoiceName);
@@ -1031,7 +1134,8 @@ window.togglePlayAll = function() {
 
   const allSentences = [];
   currentScript.sections.forEach((sec, sIdx) => {
-    allSentences.push({ text: `${sec.part}. ${sec.titleEn}`, id: null });
+    const cleanSecTitle = cleanSubHeadingText(sec.titleEn);
+    allSentences.push({ text: `${sec.part}. ${cleanSecTitle}`, id: null });
     sec.items.forEach((item, iIdx) => {
       if (item.en) {
         allSentences.push({ text: item.en, id: `row-${sIdx}-${iIdx}` });
@@ -1060,8 +1164,14 @@ window.togglePlayAll = function() {
 };
 
 // =========================================================================
-// 6. 空白欄位輸入（自動依內容延展不截斷）、自動翻譯、查字典與原地行內編輯
+// 6. 空白欄位輸入（自動依內容延展不截斷）、自動翻譯、查字典、多行原地編輯與刪除
 // =========================================================================
+window.autoResizeTextarea = function(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(el.scrollHeight, 56)}px`;
+};
+
 window.handleBlankInput = function(secIdx, itemIdx, pIdx, value) {
   const item = currentScript.sections[secIdx]?.items[itemIdx];
   if (!item) return;
@@ -1070,7 +1180,6 @@ window.handleBlankInput = function(secIdx, itemIdx, pIdx, value) {
   }
   item.filledValues[pIdx] = value;
 
-  // 同步隱藏測量文字寬度，讓輸入框隨字數自動撐寬不被截斷
   const mirrorEl = document.getElementById(`mirror-${secIdx}-${itemIdx}-${pIdx}`);
   if (mirrorEl) {
     mirrorEl.textContent = value || item.placeholders[pIdx] || '輸入單字';
@@ -1090,7 +1199,7 @@ window.translateFilledSentence = async function(secIdx, itemIdx) {
   const zhSpan = document.getElementById(`zh-text-${secIdx}-${itemIdx}`);
 
   if (!hasAnyFilledBlank(item)) {
-    const templateStr = item.templateEn.join(' [___] ').replace(/\s+/g, ' ').trim();
+    const templateStr = item.templateEn.join(' [___] ').replace(/[^\S\n]+/g, ' ').trim();
     const defaultZh = await translateEnToZhTW(templateStr);
     if (defaultZh) {
       item.zh = `${defaultZh}（填入單字後自動翻譯）`;
@@ -1137,8 +1246,8 @@ window.mergeWithPrevious = async function(secIdx, itemIdx) {
   const prevText = prev.templateEn ? prev.templateEn.join('___') : prev.en;
   const currText = curr.templateEn ? curr.templateEn.join('___') : curr.en;
 
-  const mergedEn = `${prevText} ${currText}`.replace(/\s+/g, ' ').trim();
-  const mergedZh = [prev.zh, curr.zh].filter(Boolean).join(' ');
+  const mergedEn = `${prevText}\n${currText}`.trim();
+  const mergedZh = [prev.zh, curr.zh].filter(Boolean).join('\n');
 
   items[itemIdx - 1] = buildSentenceItem(mergedEn, mergedZh, false);
   items.splice(itemIdx, 1);
@@ -1148,12 +1257,29 @@ window.mergeWithPrevious = async function(secIdx, itemIdx) {
   }
 };
 
+window.deleteSentence = function(secIdx, itemIdx) {
+  const sec = currentScript.sections[secIdx];
+  if (!sec || !Array.isArray(sec.items)) return;
+
+  sec.items.splice(itemIdx, 1);
+  if (sec.items.length === 0 && currentScript.sections.length > 1) {
+    currentScript.sections.splice(secIdx, 1);
+  }
+
+  editingTarget = { secIdx: null, itemIdx: null };
+  renderScript(currentScript);
+  showToast('🗑️ 已刪除該文字框（如需同步至雲端，請點擊右上角「☁️ 儲存雲端」）');
+};
+
 window.editSentence = function(secIdx, itemIdx) {
   editingTarget = { secIdx, itemIdx };
   renderScript(currentScript);
 
   setTimeout(() => {
     const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
+    const zhInput = document.getElementById(`edit-zh-${secIdx}-${itemIdx}`);
+    window.autoResizeTextarea(enInput);
+    window.autoResizeTextarea(zhInput);
     if (enInput) {
       enInput.focus();
       const len = enInput.value.length;
@@ -1173,8 +1299,8 @@ window.saveInlineEdit = async function(secIdx, itemIdx) {
   if (!enInput || !zhInput) return;
 
   const item = currentScript.sections[secIdx].items[itemIdx];
-  const newEn = enInput.value.trim();
-  const newZh = zhInput.value.trim();
+  const newEn = enInput.value.replace(/\r\n/g, '\n').trim();
+  const newZh = zhInput.value.replace(/\r\n/g, '\n').trim();
 
   if (!newEn) {
     enInput.focus();
@@ -1190,8 +1316,48 @@ window.saveInlineEdit = async function(secIdx, itemIdx) {
   }
 };
 
+window.splitMultilineIntoItems = async function(secIdx, itemIdx) {
+  const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
+  const zhInput = document.getElementById(`edit-zh-${secIdx}-${itemIdx}`);
+  if (!enInput || !zhInput) return;
+
+  const enLines = enInput.value
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (enLines.length <= 1) {
+    showToast('ℹ️ 請先按 Enter 將英文分成兩行以上，再點擊「拆成兩句」喔！', true);
+    enInput.focus();
+    return;
+  }
+
+  const zhLines = zhInput.value
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map(s => s.trim());
+
+  const newItems = enLines.map((lineEn, idx) =>
+    buildSentenceItem(lineEn, zhLines[idx] || '', false)
+  );
+
+  currentScript.sections[secIdx].items.splice(itemIdx, 1, ...newItems);
+  editingTarget = { secIdx: null, itemIdx: null };
+  renderScript(currentScript);
+  await autoTranslateMissingChinese(currentScript, true);
+};
+
+window.previewInlineEdit = function(secIdx, itemIdx, rowId) {
+  const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
+  const rawEn = enInput ? enInput.value.trim() : '';
+  if (!rawEn) return;
+  const previewText = rawEn.replace(/___/g, 'something');
+  window.speakText(previewText, rowId);
+};
+
 window.handleInlineEditKeydown = function(event, secIdx, itemIdx) {
-  if (event.key === 'Enter') {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
     window.saveInlineEdit(secIdx, itemIdx);
   } else if (event.key === 'Escape') {
@@ -1200,6 +1366,113 @@ window.handleInlineEditKeydown = function(event, secIdx, itemIdx) {
   }
 };
 
+// =========================================================================
+// 7. 講義排版渲染（Part 為主標題大橫幅，Step 為縮排次標題小標，內文較小）
+// =========================================================================
+function isStepSubSection(sec) {
+  return /^Step\s*\d+/i.test((sec?.part || '').trim());
+}
+
+function getPartVisualTheme(sec, partRankIdx) {
+  const themes = [
+    {
+      headerBox: 'bg-sky-50/95 border border-sky-200 border-l-4 border-l-sky-600',
+      partPill: 'bg-sky-600 text-white shadow-2xs',
+      titleColor: 'text-sky-950',
+      zhColor: 'text-sky-700',
+      speakBtn: 'bg-white hover:bg-sky-100 text-sky-700 border-sky-200',
+      stepDot: 'bg-sky-500',
+      stepPill: 'bg-sky-100 text-sky-800 border-sky-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-sky-700/90'
+    },
+    {
+      headerBox: 'bg-amber-50/95 border border-amber-200 border-l-4 border-l-amber-500',
+      partPill: 'bg-amber-500 text-white shadow-2xs',
+      titleColor: 'text-amber-950',
+      zhColor: 'text-amber-700',
+      speakBtn: 'bg-white hover:bg-amber-100 text-amber-800 border-amber-200',
+      stepDot: 'bg-amber-500',
+      stepPill: 'bg-amber-100 text-amber-900 border-amber-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-amber-700/90'
+    },
+    {
+      headerBox: 'bg-emerald-50/95 border border-emerald-200 border-l-4 border-l-emerald-600',
+      partPill: 'bg-emerald-600 text-white shadow-2xs',
+      titleColor: 'text-emerald-950',
+      zhColor: 'text-emerald-700',
+      speakBtn: 'bg-white hover:bg-emerald-100 text-emerald-700 border-emerald-200',
+      stepDot: 'bg-emerald-500',
+      stepPill: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-emerald-700/90'
+    },
+    {
+      headerBox: 'bg-purple-50/95 border border-purple-200 border-l-4 border-l-purple-600',
+      partPill: 'bg-purple-600 text-white shadow-2xs',
+      titleColor: 'text-purple-950',
+      zhColor: 'text-purple-700',
+      speakBtn: 'bg-white hover:bg-purple-100 text-purple-700 border-purple-200',
+      stepDot: 'bg-purple-500',
+      stepPill: 'bg-purple-100 text-purple-800 border-purple-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-purple-700/90'
+    },
+    {
+      headerBox: 'bg-rose-50/95 border border-rose-200 border-l-4 border-l-rose-500',
+      partPill: 'bg-rose-500 text-white shadow-2xs',
+      titleColor: 'text-rose-950',
+      zhColor: 'text-rose-700',
+      speakBtn: 'bg-white hover:bg-rose-100 text-rose-700 border-rose-200',
+      stepDot: 'bg-rose-500',
+      stepPill: 'bg-rose-100 text-rose-800 border-rose-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-rose-700/90'
+    },
+    {
+      headerBox: 'bg-indigo-50/95 border border-indigo-200 border-l-4 border-l-indigo-600',
+      partPill: 'bg-indigo-600 text-white shadow-2xs',
+      titleColor: 'text-indigo-950',
+      zhColor: 'text-indigo-700',
+      speakBtn: 'bg-white hover:bg-indigo-100 text-indigo-700 border-indigo-200',
+      stepDot: 'bg-indigo-500',
+      stepPill: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      stepTitleColor: 'text-slate-800',
+      stepZhColor: 'text-indigo-700/90'
+    }
+  ];
+
+  const fallbackEmojis = ['👋', '🎯', '🌟', '🎲', '🎨', '🚀'];
+  const combinedTitle = `${sec.titleEn || ''} ${sec.titleZh || ''}`.toLowerCase();
+
+  let emoji = fallbackEmojis[partRankIdx % fallbackEmojis.length];
+  if (/know each other|friend|introduce|meet|hello|greeting|認識/.test(combinedTitle)) {
+    emoji = '👋';
+  } else if (/mystery|guess|detective|clue|who|what is it|猜/.test(combinedTitle)) {
+    emoji = '🕵️';
+  } else if (/dinner|food|eat|drink|cook|menu|meal|餐|吃|食物/.test(combinedTitle)) {
+    emoji = '🍽️';
+  } else if (/bingo|number|count|math|數字|賓果/.test(combinedTitle)) {
+    emoji = '🎲';
+  } else if (/travel|trip|place|world|country|旅遊|地方/.test(combinedTitle)) {
+    emoji = '✈️';
+  } else if (/animal|pet|zoo|動物|寵物/.test(combinedTitle)) {
+    emoji = '🐾';
+  } else if (/draw|art|color|picture|畫|顏色/.test(combinedTitle)) {
+    emoji = '🎨';
+  } else if (/music|song|sing|movie|音樂|電影/.test(combinedTitle)) {
+    emoji = '🎵';
+  } else if (/game|challenge|play|fun|遊戲|挑戰/.test(combinedTitle)) {
+    emoji = '🏆';
+  }
+
+  return {
+    ...themes[partRankIdx % themes.length],
+    emoji
+  };
+}
+
 function renderScript(data) {
   currentScript = data;
   renderHeaderBanner(data);
@@ -1207,18 +1480,24 @@ function renderScript(data) {
   const container = document.getElementById('scriptContainer');
   container.innerHTML = '';
 
-  const colorMap = {
-    emerald: { badge: 'bg-emerald-100 text-emerald-800', border: 'border-emerald-200', title: 'text-emerald-900' },
-    amber:   { badge: 'bg-amber-100 text-amber-800',     border: 'border-amber-200',   title: 'text-amber-900' },
-    sky:     { badge: 'bg-sky-100 text-sky-800',         border: 'border-sky-200',     title: 'text-sky-900' },
-    purple:  { badge: 'bg-purple-100 text-purple-800',   border: 'border-purple-200',  title: 'text-purple-900' }
-  };
+  let partCounter = -1;
+  let activeParentTheme = getPartVisualTheme(data.sections[0] || {}, 0);
 
   data.sections.forEach((sec, sIdx) => {
-    const theme = colorMap[sec.color] || colorMap.sky;
-    const svgContent = sec.illustrationSvg || getIllustrationSvg(`${sec.titleEn} ${sec.titleZh}`, sIdx);
-    const card = document.createElement('section');
-    card.className = `bg-white rounded-2xl shadow-sm border ${theme.border} overflow-hidden`;
+    const isStep = isStepSubSection(sec);
+
+    if (!isStep) {
+      partCounter++;
+      activeParentTheme = getPartVisualTheme(sec, partCounter);
+    }
+
+    const theme = activeParentTheme;
+    const cleanTitleEn = cleanSubHeadingText(sec.titleEn);
+
+    const sectionEl = document.createElement('section');
+    sectionEl.className = isStep
+      ? 'pdf-section ml-2 sm:ml-5 -mt-4 pt-1'
+      : 'pdf-section';
 
     let itemsHtml = sec.items.map((item, iIdx) => {
       const rowId = `row-${sIdx}-${iIdx}`;
@@ -1227,45 +1506,54 @@ function renderScript(data) {
       if (isEditingThisRow) {
         const rawEn = item.templateEn ? item.templateEn.join('___') : (item.en || '');
         const rawZh = item.zh || '';
-        const safePreviewText = rawEn.replace(/___/g, 'something').replace(/'/g, "\\'");
 
         return `
-          <div id="${rowId}" class="p-3.5 rounded-xl bg-sky-50/90 border-2 border-sky-400 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition">
-            <div class="flex-1 space-y-2">
+          <div id="${rowId}" class="p-3.5 rounded-lg bg-slate-50 border border-sky-400 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div class="flex-1 space-y-2.5">
               <div>
-                <label class="block text-[11px] font-bold text-sky-800 mb-0.5">英文句子（輸入 <code class="bg-sky-100 px-1 rounded">___</code> 可自動轉為填空欄位）</label>
-                <input
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">
+                  英文句子（按 <kbd class="px-1 py-0.5 bg-white border border-slate-300 rounded text-[10px]">Enter</kbd> 可換到下一行繼續輸入；輸入 <code class="bg-slate-200 px-1 rounded">___</code> 可轉為填空欄位）
+                </label>
+                <textarea
                   id="edit-en-${sIdx}-${iIdx}"
-                  type="text"
-                  value="${escapeAttr(rawEn)}"
+                  rows="2"
+                  oninput="autoResizeTextarea(this)"
                   onkeydown="handleInlineEditKeydown(event, ${sIdx}, ${iIdx})"
-                  placeholder="輸入英文句子..."
-                  class="en-font w-full px-3 py-1.5 text-base font-medium text-slate-900 bg-white border border-sky-300 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                />
+                  placeholder="輸入英文句子，按 Enter 可換到下一行..."
+                  class="en-font w-full px-3 py-2 text-sm sm:text-base font-medium text-slate-900 bg-white border border-slate-300 rounded-lg leading-relaxed resize-y focus:outline-none focus:border-sky-500"
+                >${escapeHtml(rawEn)}</textarea>
               </div>
               <div>
-                <label class="block text-[11px] font-bold text-slate-600 mb-0.5">中文提示（留空按完成會自動翻譯成繁體中文）</label>
-                <input
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">
+                  中文翻譯（按 <kbd class="px-1 py-0.5 bg-white border border-slate-300 rounded text-[10px]">Enter</kbd> 可換行；留空按完成會自動翻譯成繁體中文）
+                </label>
+                <textarea
                   id="edit-zh-${sIdx}-${iIdx}"
-                  type="text"
-                  value="${escapeAttr(rawZh)}"
+                  rows="2"
+                  oninput="autoResizeTextarea(this)"
                   onkeydown="handleInlineEditKeydown(event, ${sIdx}, ${iIdx})"
-                  placeholder="輸入中文提示或留空自動翻譯..."
-                  class="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
-                />
+                  placeholder="輸入中文或留空自動翻譯..."
+                  class="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg leading-relaxed resize-y focus:outline-none focus:border-sky-500"
+                >${escapeHtml(rawZh)}</textarea>
               </div>
-              <div class="flex items-center gap-2 pt-0.5">
-                <button onclick="saveInlineEdit(${sIdx}, ${iIdx})" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition">
+              <div class="flex flex-wrap items-center gap-2 pt-0.5">
+                <button type="button" onclick="saveInlineEdit(${sIdx}, ${iIdx})" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition">
                   ✅ 完成
                 </button>
-                <button onclick="cancelInlineEdit()" class="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition">
+                <button type="button" onclick="splitMultilineIntoItems(${sIdx}, ${iIdx})" class="px-2.5 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-800 text-xs font-bold rounded-lg transition" title="將換行後的每一行拆成獨立句子">
+                  ✂️ 拆成兩句
+                </button>
+                <button type="button" onclick="deleteSentence(${sIdx}, ${iIdx})" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition" title="刪除此文字框">
+                  🗑️ 刪除
+                </button>
+                <button type="button" onclick="cancelInlineEdit()" class="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-lg transition">
                   ✕ 取消
                 </button>
-                <span class="text-[11px] text-slate-400">按 Enter 儲存 • Esc 取消</span>
+                <span class="text-[11px] text-slate-400">Enter 換行 • Ctrl+Enter 完成 • Esc 取消</span>
               </div>
             </div>
-            <div class="flex items-center gap-2 shrink-0 self-start sm:self-center">
-              <button onclick="speakText('${safePreviewText}', '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+            <div class="shrink-0 self-start">
+              <button type="button" onclick="previewInlineEdit(${sIdx}, ${iIdx}, '${rowId}')" class="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition">
                 🔊 試聽
               </button>
             </div>
@@ -1273,29 +1561,40 @@ function renderScript(data) {
         `;
       }
 
-      const toolBtns = `
-        <div class="flex items-center gap-1 opacity-75 hover:opacity-100 transition">
-          ${iIdx > 0 ? `<button onclick="mergeWithPrevious(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200/80 hover:bg-slate-300 text-slate-600" title="與上一句合併">⬆️ 合併</button>` : ''}
-          <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-0.5 rounded bg-slate-200/80 hover:bg-sky-200 text-slate-700" title="直接在此處編輯中英文">✏️</button>
+      const subtleActions = `
+        <div class="flex items-center gap-1 shrink-0">
+          ${iIdx > 0 ? `<button onclick="mergeWithPrevious(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="與上一句合併">⬆️</button>` : ''}
+          <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="編輯此句">✏️</button>
+          <button onclick="deleteSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此文字框">🗑️</button>
         </div>
       `;
 
+      // 填空題型（內文字級縮小為 text-[15px] sm:text-base）
       if (item.templateEn) {
         const filledVals = Array.isArray(item.filledValues) ? item.filledValues : [];
         let sentenceHtml = '';
         item.templateEn.forEach((part, pIdx) => {
-          sentenceHtml += `<span>${escapeHtml(part)}</span>`;
+          const lineSegments = String(part).split('\n');
+          lineSegments.forEach((seg, segIdx) => {
+            if (segIdx > 0) {
+              sentenceHtml += `<span class="basis-full h-0"></span>`;
+            }
+            if (seg) {
+              sentenceHtml += `<span>${escapeHtml(seg)}</span>`;
+            }
+          });
+
           if (pIdx < item.placeholders.length) {
             const curVal = filledVals[pIdx] || '';
             const hintWord = curVal || item.placeholders[pIdx];
             const mirrorDisplay = curVal || item.placeholders[pIdx] || '輸入單字';
             sentenceHtml += `
-              <span class="inline-flex items-center max-w-full mx-1.5 my-0.5 bg-indigo-50 border-b-2 border-indigo-400 rounded-t px-1">
+              <span class="inline-flex items-center max-w-full mx-1 my-0.5 border-b-2 border-slate-700 bg-sky-50/60 px-1 rounded-t-xs">
                 <span class="inline-grid items-center max-w-full">
                   <span
                     id="mirror-${sIdx}-${iIdx}-${pIdx}"
                     aria-hidden="true"
-                    class="invisible whitespace-pre col-start-1 row-start-1 px-2 py-0.5 font-bold pointer-events-none"
+                    class="invisible whitespace-pre col-start-1 row-start-1 px-2 py-0.5 text-sm sm:text-base font-semibold pointer-events-none"
                   >${escapeHtml(mirrorDisplay)}</span>
                   <input
                     id="input-${sIdx}-${iIdx}-${pIdx}"
@@ -1305,14 +1604,14 @@ function renderScript(data) {
                     oninput="handleBlankInput(${sIdx}, ${iIdx}, ${pIdx}, this.value)"
                     onblur="translateFilledSentence(${sIdx}, ${iIdx})"
                     onkeydown="handleBlankKeydown(event, ${sIdx}, ${iIdx})"
-                    class="blank-word-input col-start-1 row-start-1 w-full min-w-[6.5rem] px-2 py-0.5 text-center font-bold text-indigo-700 bg-transparent focus:outline-none"
+                    class="blank-word-input col-start-1 row-start-1 w-full min-w-[5.5rem] px-2 py-0.5 text-center text-sm sm:text-base font-semibold text-sky-900 bg-transparent focus:outline-none"
                   />
                 </span>
                 <button
                   id="lookup-btn-${sIdx}-${iIdx}-${pIdx}"
                   type="button"
                   onclick="lookupBlankWord(${sIdx}, ${iIdx}, ${pIdx})"
-                  class="text-xs px-1 py-0.5 text-amber-600 hover:text-amber-800 hover:scale-110 transition shrink-0"
+                  class="text-xs px-1 py-0.5 text-amber-600 hover:text-amber-800 transition shrink-0"
                   title="查詢「${escapeAttr(hintWord)}」英漢字典"
                 >📖</button>
               </span>
@@ -1321,98 +1620,133 @@ function renderScript(data) {
         });
 
         return `
-          <div id="${rowId}" class="p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="en-font text-lg text-slate-800 font-medium flex flex-wrap items-center">${sentenceHtml}</div>
-              <div class="flex items-center justify-between mt-1 gap-2">
-                <span id="zh-text-${sIdx}-${iIdx}" class="text-xs text-slate-500">${escapeHtml(item.zh || '⏳ 準備翻譯中文...')}</span>
-                ${toolBtns}
+          <div id="${rowId}" class="group py-2 px-3 -mx-3 rounded-lg hover:bg-slate-50/90 flex items-start justify-between gap-3 transition">
+            <div class="flex items-start gap-2.5 flex-1 min-w-0">
+              <span class="text-slate-400 select-none mt-1 text-xs">•</span>
+              <div class="flex-1 min-w-0">
+                <div class="en-font text-[15px] sm:text-base text-slate-800 leading-relaxed flex flex-wrap items-center">
+                  ${sentenceHtml}
+                </div>
+                <div id="zh-text-${sIdx}-${iIdx}" class="text-xs text-slate-500 mt-0.5 leading-snug whitespace-pre-line">${escapeHtml(item.zh || '⏳ 準備翻譯中文...')}</div>
               </div>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <button onclick="speakTemplate(${sIdx}, ${iIdx})" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
+            <div class="flex items-center gap-1 shrink-0 pt-0.5">
+              <button onclick="speakTemplate(${sIdx}, ${iIdx})" class="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded-md transition" title="朗讀句子">
                 🔊 朗讀
               </button>
+              ${subtleActions}
             </div>
           </div>
         `;
       }
 
+      // 解答提示句
       if (item.isAnswer) {
-        const safeText = item.en.replace(/'/g, "\\'");
+        const safeText = item.en.replace(/'/g, "\\'").replace(/\n/g, ' ');
         return `
-          <div id="${rowId}" class="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-3">
-            <div class="flex-1 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-3 flex-wrap">
-                <button onclick="this.nextElementSibling.classList.toggle('blur-sm')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-md font-bold transition">
-                  👀 點擊揭曉答案
+          <div id="${rowId}" class="group py-2 px-3 -mx-3 rounded-lg hover:bg-slate-50/90 flex items-start justify-between gap-3 transition">
+            <div class="flex items-start gap-2.5 flex-1 min-w-0">
+              <span class="text-emerald-600 select-none mt-1 text-xs">▸</span>
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <button onclick="this.nextElementSibling.classList.toggle('blur-sm')" class="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold transition">
+                  👀 揭曉答案
                 </button>
                 <div class="blur-sm transition duration-200 select-none">
-                  <span class="en-font text-lg font-bold text-emerald-800">${escapeHtml(item.en)}</span>
-                  ${item.zh ? `<span class="text-xs text-emerald-600 ml-2">${escapeHtml(item.zh)}</span>` : ''}
+                  <span class="en-font text-[15px] sm:text-base font-bold text-emerald-800 whitespace-pre-line">${escapeHtml(item.en)}</span>
+                  ${item.zh ? `<span class="text-xs text-slate-500 ml-2 whitespace-pre-line">${escapeHtml(item.zh)}</span>` : ''}
                 </div>
               </div>
-              ${toolBtns}
             </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <button onclick="speakText('${safeText}', '${rowId}')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm">
-                🔊 播放
+            <div class="flex items-center gap-1 shrink-0 pt-0.5">
+              <button onclick="speakText('${safeText}', '${rowId}')" class="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold rounded-md transition" title="朗讀答案">
+                🔊 朗讀
               </button>
+              ${subtleActions}
             </div>
           </div>
         `;
       }
 
-      const safeText = item.en.replace(/'/g, "\\'");
+      // 一般講義例句
+      const safeText = item.en.replace(/'/g, "\\'").replace(/\n/g, ' ');
       return `
-        <div id="${rowId}" class="p-3.5 rounded-xl bg-slate-50 hover:bg-sky-50/50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition">
-          <div class="flex-1">
-            <div class="en-font text-lg text-slate-800 font-medium">${escapeHtml(item.en)}</div>
-            <div class="flex items-center justify-between mt-0.5">
-              <span class="text-xs text-slate-500">${escapeHtml(item.zh || '')}</span>
-              ${toolBtns}
+        <div id="${rowId}" class="group py-1.5 px-3 -mx-3 rounded-lg hover:bg-slate-50/90 flex items-start justify-between gap-3 transition">
+          <div class="flex items-start gap-2.5 flex-1 min-w-0">
+            <span class="text-slate-400 select-none mt-1 text-xs">•</span>
+            <div class="flex-1 min-w-0">
+              <div class="en-font text-[15px] sm:text-base text-slate-800 leading-relaxed whitespace-pre-line">${escapeHtml(item.en)}</div>
+              ${item.zh ? `<div class="text-xs text-slate-500 mt-0.5 leading-snug whitespace-pre-line">${escapeHtml(item.zh)}</div>` : ''}
             </div>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <button onclick="speakText('${safeText}', '${rowId}')" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 transition">
-              🔊 播放
+          <div class="flex items-center gap-1 shrink-0 pt-0.5">
+            <button onclick="speakText('${safeText}', '${rowId}')" class="px-2 py-1 bg-slate-100 hover:bg-sky-100 text-slate-700 hover:text-sky-800 text-xs font-bold rounded-md transition" title="朗讀此句">
+              🔊 朗讀
             </button>
+            ${subtleActions}
           </div>
         </div>
       `;
     }).join('');
 
-    card.innerHTML = `
-      <div class="p-5 md:p-6 flex flex-col md:flex-row gap-5">
-        <div class="md:w-44 shrink-0 flex flex-col items-center justify-center text-center bg-slate-50/80 rounded-xl p-4 border border-slate-100">
-          <span class="text-xs font-bold px-2.5 py-0.5 rounded-full ${theme.badge} mb-2">
-            ${escapeHtml(sec.part)}
-          </span>
-          ${svgContent}
-          <div class="text-xs font-bold text-slate-600 mt-2">${escapeHtml(sec.titleZh || '口說練習段落')}</div>
-        </div>
+    if (isStep) {
+      const stepZhSubtitle = sec.titleZh && sec.titleZh !== '口說練習段落'
+        ? `<span class="${theme.stepZhColor} font-medium text-xs sm:text-sm ml-1.5">（${escapeHtml(sec.titleZh)}）</span>`
+        : '';
 
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="en-font text-xl font-bold ${theme.title} flex items-center gap-2">
-              <span>${sec.icon}</span> ${escapeHtml(sec.titleEn)}
-            </h3>
-            <button onclick="speakText('${sec.titleEn.replace(/'/g, "\\'")}', null)" class="text-xs text-slate-400 hover:text-sky-600 font-medium">
-              🔊 唸標題
-            </button>
+      sectionEl.innerHTML = `
+        <div class="flex items-center justify-between gap-2 pb-1.5 mb-2 border-b border-dashed border-slate-300">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span class="w-2 h-2 rounded-full ${theme.stepDot} shrink-0"></span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-bold tracking-wide ${theme.stepPill} shrink-0">
+              <span>👣</span>
+              <span>${escapeHtml(sec.part)}</span>
+            </span>
+            <h4 class="en-font text-base sm:text-lg font-bold ${theme.stepTitleColor} leading-snug">
+              <span>${escapeHtml(cleanTitleEn)}</span>
+              ${stepZhSubtitle}
+            </h4>
           </div>
-          <div class="space-y-2.5">
-            ${itemsHtml}
-          </div>
+          <button onclick="speakText('${cleanTitleEn.replace(/'/g, "\\'")}', null)" class="text-[11px] text-slate-400 hover:text-sky-700 px-2 py-0.5 rounded hover:bg-slate-100 font-medium transition shrink-0" title="朗讀步驟標題">
+            🔊 唸步驟
+          </button>
         </div>
-      </div>
-    `;
-    container.appendChild(card);
+        <div class="divide-y divide-slate-100 pl-3 sm:pl-4">
+          ${itemsHtml}
+        </div>
+      `;
+    } else {
+      const partZhSubtitle = sec.titleZh && sec.titleZh !== '口說練習段落'
+        ? `<span class="${theme.zhColor} font-semibold text-base sm:text-lg ml-1.5">（${escapeHtml(sec.titleZh)}）</span>`
+        : '';
+
+      sectionEl.innerHTML = `
+        <div class="flex items-center justify-between gap-3 px-4 py-3 mb-3 rounded-xl ${theme.headerBox}">
+          <div class="flex flex-wrap items-center gap-2.5 min-w-0">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm sm:text-base font-extrabold tracking-wide ${theme.partPill} shrink-0">
+              <span class="text-base sm:text-lg leading-none">${theme.emoji}</span>
+              <span>${escapeHtml(sec.part)}</span>
+            </span>
+            <h3 class="en-font text-xl sm:text-2xl font-extrabold ${theme.titleColor} tracking-tight leading-snug">
+              <span>${escapeHtml(cleanTitleEn)}</span>
+              ${partZhSubtitle}
+            </h3>
+          </div>
+          <button onclick="speakText('${cleanTitleEn.replace(/'/g, "\\'")}', null)" class="text-xs px-2.5 py-1.5 rounded-lg border font-bold transition shrink-0 ${theme.speakBtn}" title="朗讀段落標題">
+            🔊 唸標題
+          </button>
+        </div>
+        <div class="divide-y divide-slate-100 pl-1">
+          ${itemsHtml}
+        </div>
+      `;
+    }
+
+    container.appendChild(sectionEl);
   });
 }
 
 // =========================================================================
-// 7. PDF 座標級解析、跨行斷句與自動中譯
+// 8. PDF 座標級解析、跨行斷句與自動中譯
 // =========================================================================
 window.handlePdfUpload = async function(event) {
   const file = event.target.files[0];
@@ -1476,6 +1810,7 @@ window.handlePdfUpload = async function(event) {
 
   const parsedData = parseLinesToCoherentScript(reconstructedLines, file.name.replace(/\.pdf$/i, ''));
   parsedData.id = null;
+  parsedData.avatarUrl = currentScript.avatarUrl || localStorage.getItem(LOCAL_AVATAR_KEY) || '';
   document.getElementById('deleteCloudBtn').classList.add('hidden');
   renderScript(parsedData);
 
@@ -1483,12 +1818,17 @@ window.handlePdfUpload = async function(event) {
 
   const translatedCount = await autoTranslateMissingChinese(currentScript, true);
   if (translatedCount === 0) {
-    showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存至雲端」並輸入管理密碼保存。`);
+    showToast(`📄 已匯入「${file.name}」！確認句型無誤後，請點擊右上角「☁️ 儲存雲端」保存。`);
   }
 };
 
 function buildSentenceItem(enText, zhText, isAnswer = false) {
-  let cleanEn = enText.replace(/_{2,}/g, '___').replace(/\s+/g, ' ').trim();
+  let cleanEn = enText
+    .replace(/\r\n/g, '\n')
+    .replace(/_{2,}/g, '___')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .trim();
 
   if (!cleanEn.includes('___') && /\b(I like|I don't like|I have|My favorite is|It is a|This is a)$/i.test(cleanEn)) {
     cleanEn += ' ___';
@@ -1521,12 +1861,9 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
   const sections = [];
   let currentSec = null;
 
-  const colors = ['emerald', 'amber', 'sky', 'purple'];
-  const icons = ['🔍', '🍽️', '🔢', '🎯'];
-
   const contentLines = [];
   rawLines.forEach((line, idx) => {
-    if (idx === 0 && !/^Part\s*\d+/i.test(line)) {
+    if (idx === 0 && !/^(Part|Step)\s*\d+/i.test(line)) {
       docTitle = line;
       return;
     }
@@ -1543,11 +1880,11 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
   const stitchedLines = [];
   for (let i = 0; i < contentLines.length; i++) {
     let curr = contentLines[i];
-    const isPartHeader = /^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：]/i.test(curr);
+    const isPartHeader = /^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：.．]/i.test(curr);
 
     if (!isPartHeader && stitchedLines.length > 0) {
       const prev = stitchedLines[stitchedLines.length - 1];
-      const prevIsHeader = /^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：]/i.test(prev);
+      const prevIsHeader = /^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：.．]/i.test(prev);
 
       const prevEnOnly = prev.replace(/[\u4e00-\u9fa5].*$/, '').trim();
       const currEnOnly = curr.replace(/[\u4e00-\u9fa5].*$/, '').trim();
@@ -1568,20 +1905,18 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
   }
 
   stitchedLines.forEach(line => {
-    const partMatch = line.match(/^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：]?\s*(.+)$/i);
+    const partMatch = line.match(/^(Part\s*\d+|Section\s*\d+|Step\s*\d+)\s*[|｜:：.．\-]?\s*(.+)$/i);
     if (partMatch) {
       if (currentSec) sections.push(currentSec);
-      const secIdx = sections.length;
-      const zhMatch = partMatch[2].match(/([\u4e00-\u9fa5].*)$/);
+      const rawTitlePart = cleanSubHeadingText(partMatch[2]);
+      const zhMatch = rawTitlePart.match(/([\u4e00-\u9fa5].*)$/);
       const titleZh = zhMatch ? zhMatch[1].trim() : '';
-      const titleEn = zhMatch ? partMatch[2].replace(zhMatch[1], '').trim() : partMatch[2].trim();
+      const titleEn = cleanSubHeadingText(zhMatch ? rawTitlePart.replace(zhMatch[1], '') : rawTitlePart);
 
       currentSec = {
-        part: partMatch[1],
-        titleEn: titleEn || partMatch[1],
+        part: partMatch[1].trim(),
+        titleEn: titleEn || partMatch[1].trim(),
         titleZh,
-        icon: icons[secIdx % icons.length],
-        color: colors[secIdx % colors.length],
         items: []
       };
       return;
@@ -1592,8 +1927,6 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
         part: 'Part 1',
         titleEn: 'Speaking Practice',
         titleZh: '',
-        icon: '🗣️',
-        color: 'sky',
         items: []
       };
     }
@@ -1632,7 +1965,7 @@ function parseLinesToCoherentScript(rawLines, fallbackTitle) {
 }
 
 // =========================================================================
-// 8. 反白選取單字（含空白輸入框選字）➔ 浮動查詢按鈕 ➔ 可愛英漢字典小視窗
+// 9. 反白選取單字（含空白輸入框選字）➔ 浮動查詢按鈕 ➔ 可愛英漢字典小視窗
 // =========================================================================
 const dictCache = new Map();
 let pendingSelectedWord = '';
@@ -1689,7 +2022,6 @@ function checkTextSelectionForDictionary(event) {
   if (event?.target && selectionTooltipEl?.contains(event.target)) return;
   if (dictModalEl && !dictModalEl.classList.contains('hidden')) return;
 
-  // 1. 優先檢查是否在空白單字輸入框中選取文字
   const activeEl = document.activeElement;
   if (activeEl && activeEl.classList && activeEl.classList.contains('blank-word-input')) {
     const start = activeEl.selectionStart;
@@ -1704,7 +2036,6 @@ function checkTextSelectionForDictionary(event) {
     }
   }
 
-  // 2. 檢查一般講稿文字選取
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
     hideSelectionTooltip();
