@@ -15,7 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // =========================================================================
-// 1. Firebase Firestore 初始化設定
+// 1. Firebase Firestore 初始化設定與管理者狀態管理
 // =========================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyAlx0ztnMKhRvJQL2rMC-bQEflXNBbbccI",
@@ -31,6 +31,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const COLLECTION_NAME = "speaking_club_scripts";
 const LOCAL_AVATAR_KEY = "speaking_club_cute_avatar";
+const ADMIN_SESSION_KEY = "speaking_club_admin_session";
+
+let adminPasswordSession = sessionStorage.getItem(ADMIN_SESSION_KEY) || "";
+let isAdminMode = Boolean(adminPasswordSession);
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -131,6 +135,129 @@ function showErrorAlertModal(title, htmlMessage, allowRetry = true) {
     document.addEventListener('keydown', onKeydown);
   });
 }
+
+function setAdminSession(password) {
+  adminPasswordSession = password || "";
+  isAdminMode = Boolean(adminPasswordSession);
+  if (isAdminMode) {
+    sessionStorage.setItem(ADMIN_SESSION_KEY, adminPasswordSession);
+  } else {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    editingTarget = { secIdx: null, itemIdx: null };
+    isEditingHeader = false;
+  }
+  applyAdminUiPermissions();
+  renderScript(currentScript);
+}
+
+function applyAdminUiPermissions() {
+  const saveBtn = document.getElementById('saveCloudBtn');
+  const deleteBtn = document.getElementById('deleteCloudBtn');
+  const translateBtn = document.getElementById('translateBtn');
+
+  // 尋找匯入 PDF 的按鈕或外層 label
+  const pdfInput = document.querySelector('input[type="file"][onchange*="handlePdfUpload"], input[type="file"][accept*="pdf"]');
+  const pdfWrapper = pdfInput ? (pdfInput.closest('label') || pdfInput.closest('button') || pdfInput) : null;
+
+  if (saveBtn) saveBtn.classList.toggle('hidden', !isAdminMode);
+  if (translateBtn) translateBtn.classList.toggle('hidden', !isAdminMode);
+  if (pdfWrapper) pdfWrapper.classList.toggle('hidden', !isAdminMode);
+
+  if (deleteBtn) {
+    const canDeleteCloud = isAdminMode && currentScript?.id && currentScript.id !== 'default';
+    deleteBtn.classList.toggle('hidden', !canDeleteCloud);
+  }
+
+  ensureAdminToggleButton();
+}
+
+function ensureAdminToggleButton() {
+  let adminBtn = document.getElementById('adminModeToggleBtn');
+  if (!adminBtn) {
+    const anchorBtn =
+      document.getElementById('saveCloudBtn') ||
+      document.getElementById('translateBtn') ||
+      document.getElementById('playAllBtn');
+
+    if (!anchorBtn || !anchorBtn.parentElement) return;
+
+    adminBtn = document.createElement('button');
+    adminBtn.id = 'adminModeToggleBtn';
+    adminBtn.type = 'button';
+    adminBtn.addEventListener('click', window.handleAdminToggleClick);
+    anchorBtn.parentElement.appendChild(adminBtn);
+  }
+
+  if (isAdminMode) {
+    adminBtn.className =
+      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 shadow-2xs transition shrink-0';
+    adminBtn.innerHTML = '<span>👑</span><span>管理者（登出）</span>';
+    adminBtn.title = '目前為管理者模式，點擊可登出並切換為一般瀏覽模式';
+  } else {
+    adminBtn.className =
+      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs transition shrink-0';
+    adminBtn.innerHTML = '<span>🔐</span><span>管理者登入</span>';
+    adminBtn.title = '登入管理者以編輯講稿、匯入 PDF 或儲存雲端';
+  }
+}
+
+window.handleAdminToggleClick = async function() {
+  if (isAdminMode) {
+    setAdminSession("");
+    showToast('🔒 已登出管理者模式，目前為一般學員瀏覽畫面。');
+    return;
+  }
+
+  const enteredPassword = await promptAdminPassword('登入管理者模式');
+  if (!enteredPassword) return;
+
+  const adminBtn = document.getElementById('adminModeToggleBtn');
+  const origHtml = adminBtn ? adminBtn.innerHTML : '';
+  if (adminBtn) {
+    adminBtn.disabled = true;
+    adminBtn.innerHTML = '<span>⏳</span><span>驗證中...</span>';
+  }
+
+  let shouldRetry = false;
+  try {
+    // 透過 Firestore 安全規則驗證密碼（不寫入 updatedAt，不影響講稿清單）
+    await setDoc(
+      doc(db, COLLECTION_NAME, "_auth_verify"),
+      {
+        adminKey: enteredPassword,
+        verifiedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    setAdminSession(enteredPassword);
+    showToast('👑 管理者登入成功！已解鎖編輯、刪除、匯入 PDF 與雲端儲存功能。');
+  } catch (err) {
+    console.error("管理者登入驗證失敗:", err);
+    const isAuthError = err.code === 'permission-denied' ||
+      (err.message && (err.message.includes('Missing or insufficient permissions') || err.message.includes('PERMISSION_DENIED')));
+
+    if (isAuthError) {
+      showToast('❌ 管理員密碼錯誤，無法進入管理者模式。', true);
+      shouldRetry = await showErrorAlertModal(
+        "管理員密碼錯誤",
+        "您輸入的管理員密碼不正確，請重新輸入正確密碼以啟用編輯功能。",
+        true
+      );
+    } else {
+      showToast(`❌ 驗證連線異常：${err.message}`, true);
+    }
+  } finally {
+    if (adminBtn) {
+      adminBtn.disabled = false;
+      if (!isAdminMode) adminBtn.innerHTML = origHtml;
+    }
+  }
+
+  if (shouldRetry) {
+    await window.handleAdminToggleClick();
+  }
+};
 
 // =========================================================================
 // 2. 自動英翻中引擎（支援無中文註解與填空單字後自動補齊繁體中文）
@@ -262,7 +389,9 @@ async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, force
     translateBtn.innerHTML = '<span>⏳</span> 翻譯中...';
   }
 
-  showToast(`🌐 正在翻譯 ${tasks.length} 句繁體中文...`);
+  if (isAdminMode) {
+    showToast(`🌐 正在翻譯 ${tasks.length} 句繁體中文...`);
+  }
 
   const batchSize = 5;
   for (let i = 0; i < tasks.length; i += batchSize) {
@@ -276,11 +405,14 @@ async function autoTranslateMissingChinese(scriptObj, silentIfNone = true, force
     translateBtn.innerHTML = origBtnHtml;
   }
 
-  showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！請點擊「☁️ 儲存雲端」保存。`);
+  if (isAdminMode) {
+    showToast(`✅ 已自動完成 ${tasks.length} 句繁體中文翻譯！請點擊「☁️ 儲存雲端」保存。`);
+  }
   return tasks.length;
 }
 
 window.triggerManualTranslate = async function() {
+  if (!isAdminMode) return;
   await autoTranslateMissingChinese(currentScript, false, true);
 };
 
@@ -409,9 +541,12 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
     const selectEl = document.getElementById('savedScriptsSelect');
     selectEl.innerHTML = '<option value="default">預設範例 (11/13)</option>';
 
+    let firstValidId = null;
     querySnapshot.forEach((docSnap) => {
+      if (docSnap.id === '_auth_verify') return;
       const data = { id: docSnap.id, ...docSnap.data() };
       savedScriptsMap.set(docSnap.id, data);
+      if (!firstValidId) firstValidId = docSnap.id;
 
       const opt = document.createElement('option');
       opt.value = docSnap.id;
@@ -425,10 +560,9 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
     if (selectIdAfterLoad && savedScriptsMap.has(selectIdAfterLoad)) {
       selectEl.value = selectIdAfterLoad;
       await loadSelectedScript(selectIdAfterLoad);
-    } else if (!selectIdAfterLoad && savedScriptsMap.size > 0) {
-      const latestId = querySnapshot.docs[0].id;
-      selectEl.value = latestId;
-      await loadSelectedScript(latestId);
+    } else if (!selectIdAfterLoad && firstValidId) {
+      selectEl.value = firstValidId;
+      await loadSelectedScript(firstValidId);
     }
   } catch (err) {
     console.error("Firestore 讀取失敗:", err);
@@ -441,10 +575,9 @@ async function fetchCloudScripts(selectIdAfterLoad = null) {
 window.loadSelectedScript = async function(scriptId) {
   editingTarget = { secIdx: null, itemIdx: null };
   isEditingHeader = false;
-  const deleteBtn = document.getElementById('deleteCloudBtn');
   if (scriptId === 'default') {
     currentScript = structuredClone(defaultScriptData);
-    deleteBtn.classList.add('hidden');
+    applyAdminUiPermissions();
     renderScript(currentScript);
     return;
   }
@@ -452,7 +585,7 @@ window.loadSelectedScript = async function(scriptId) {
   const target = savedScriptsMap.get(scriptId);
   if (target) {
     currentScript = structuredClone(target);
-    deleteBtn.classList.remove('hidden');
+    applyAdminUiPermissions();
     if (target.voiceProfile) {
       applySmartVoiceMatch(target.voiceProfile);
     }
@@ -468,6 +601,8 @@ window.loadSelectedScript = async function(scriptId) {
 };
 
 window.saveScriptToFirestore = async function() {
+  if (!isAdminMode) return;
+
   if (isEditingHeader) {
     window.saveHeaderEdit();
   }
@@ -475,7 +610,7 @@ window.saveScriptToFirestore = async function() {
     await window.saveInlineEdit(editingTarget.secIdx, editingTarget.itemIdx);
   }
 
-  const enteredPassword = await promptAdminPassword(`儲存講稿「${currentScript.title}」至雲端`);
+  const enteredPassword = adminPasswordSession || await promptAdminPassword(`儲存講稿「${currentScript.title}」至雲端`);
   if (!enteredPassword) return;
 
   const saveBtn = document.getElementById('saveCloudBtn');
@@ -560,7 +695,8 @@ window.saveScriptToFirestore = async function() {
       (err.message && (err.message.includes('Missing or insufficient permissions') || err.message.includes('PERMISSION_DENIED')));
 
     if (isAuthError) {
-      showToast("❌ 管理員密碼錯誤！資料「沒有儲存成功」，請確認密碼後再試。", true);
+      setAdminSession("");
+      showToast("❌ 管理員密碼已失效或錯誤！資料「沒有儲存成功」，請重新登入後再試。", true);
       shouldRetry = await showErrorAlertModal(
         "密碼錯誤，沒有儲存成功",
         `您輸入的管理員密碼不正確，雲端已拒絕寫入權限。<br><br>⚠️ 目前講稿「<strong>${currentScript.title}</strong>」<span class="text-rose-600 font-bold underline">沒有儲存成功</span>，請重新輸入正確密碼。`,
@@ -580,14 +716,18 @@ window.saveScriptToFirestore = async function() {
   }
 
   if (shouldRetry) {
-    await window.saveScriptToFirestore();
+    await window.handleAdminToggleClick();
+    if (isAdminMode) {
+      await window.saveScriptToFirestore();
+    }
   }
 };
 
 window.deleteCurrentCloudScript = async function() {
+  if (!isAdminMode) return;
   if (!currentScript.id || currentScript.id === 'default') return;
 
-  const enteredPassword = await promptAdminPassword(`從雲端刪除「${currentScript.title}」`);
+  const enteredPassword = adminPasswordSession || await promptAdminPassword(`從雲端刪除「${currentScript.title}」`);
   if (!enteredPassword) return;
 
   let shouldRetry = false;
@@ -600,7 +740,7 @@ window.deleteCurrentCloudScript = async function() {
     showToast(`🗑️ 已從雲端刪除：「${currentScript.title}」`);
     currentScript = structuredClone(defaultScriptData);
     document.getElementById('savedScriptsSelect').value = 'default';
-    document.getElementById('deleteCloudBtn').classList.add('hidden');
+    applyAdminUiPermissions();
     renderScript(currentScript);
     await fetchCloudScripts('default');
   } catch (err) {
@@ -609,6 +749,7 @@ window.deleteCurrentCloudScript = async function() {
       (err.message && (err.message.includes('Missing or insufficient permissions') || err.message.includes('PERMISSION_DENIED')));
 
     if (isAuthError) {
+      setAdminSession("");
       showToast("❌ 管理員密碼錯誤！雲端講稿「沒有刪除成功」。", true);
       shouldRetry = await showErrorAlertModal(
         "密碼錯誤，沒有刪除成功",
@@ -621,12 +762,15 @@ window.deleteCurrentCloudScript = async function() {
   }
 
   if (shouldRetry) {
-    await window.deleteCurrentCloudScript();
+    await window.handleAdminToggleClick();
+    if (isAdminMode) {
+      await window.deleteCurrentCloudScript();
+    }
   }
 };
 
 // =========================================================================
-// 4-1. 可愛插畫風活動資訊標題區（支援插圖上傳壓縮保存、一鍵複製連結與原地編輯）
+// 4-1. 可愛插畫風活動資訊標題區（支援插圖上傳壓縮保存、一鍵複製連結與權限控管）
 // =========================================================================
 function getDefaultCuteAvatarSvg() {
   const svg = `
@@ -660,6 +804,7 @@ function getBannerAvatarSrc(data) {
 }
 
 window.triggerAvatarUpload = function() {
+  if (!isAdminMode) return;
   let fileInput = document.getElementById('cuteAvatarFileInput');
   if (!fileInput) {
     fileInput = document.createElement('input');
@@ -674,6 +819,7 @@ window.triggerAvatarUpload = function() {
 };
 
 window.handleAvatarFileSelected = function(event) {
+  if (!isAdminMode) return;
   const file = event.target.files?.[0];
   if (!file) return;
 
@@ -727,6 +873,7 @@ window.copyMeetUrl = function(url) {
 };
 
 window.editDocHeader = function() {
+  if (!isAdminMode) return;
   isEditingHeader = true;
   renderHeaderBanner(currentScript);
 
@@ -746,6 +893,7 @@ window.cancelHeaderEdit = function() {
 };
 
 window.saveHeaderEdit = function() {
+  if (!isAdminMode) return;
   const titleInput = document.getElementById('editHeaderTitleInput');
   const meetInput = document.getElementById('editHeaderMeetInput');
   if (!titleInput || !meetInput) return;
@@ -784,7 +932,7 @@ function renderHeaderBanner(data) {
   const avatarSrc = getBannerAvatarSrc(data);
   const fallbackSvg = getDefaultCuteAvatarSvg();
 
-  if (isEditingHeader) {
+  if (isAdminMode && isEditingHeader) {
     bannerCard.innerHTML = `
       <div class="w-full space-y-3 bg-gradient-to-r from-amber-50/90 via-rose-50/70 to-sky-50/90 p-4 sm:p-5 rounded-2xl border-2 border-amber-200 shadow-xs">
         <div class="flex items-center justify-between flex-wrap gap-2">
@@ -858,6 +1006,34 @@ function renderHeaderBanner(data) {
   const normalizedHref = meetUrl && !/^https?:\/\//i.test(meetUrl) ? `https://${meetUrl}` : meetUrl;
   const displayMeetText = escapeHtml(meetUrl);
 
+  const changeAvatarBtnHtml = isAdminMode
+    ? `
+      <button
+        type="button"
+        onclick="triggerAvatarUpload()"
+        class="absolute inset-x-1.5 bottom-1.5 py-1 px-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white text-[11px] font-bold opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition flex items-center justify-center gap-1 shadow-xs"
+        title="點擊選擇電腦或手機中的可愛圖片"
+      >
+        <span>🖼️</span>
+        <span>換圖片</span>
+      </button>
+    `
+    : '';
+
+  const editHeaderBtnHtml = isAdminMode
+    ? `
+      <button
+        type="button"
+        onclick="editDocHeader()"
+        class="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-white/80 hover:bg-white border border-amber-200 px-2.5 py-1 rounded-full shadow-2xs transition"
+        title="編輯標題與連結"
+      >
+        <span>✏️</span>
+        <span>編輯</span>
+      </button>
+    `
+    : '';
+
   bannerCard.innerHTML = `
     <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-50/95 via-rose-50/70 to-sky-50/95 border-2 border-amber-200/80 p-4 sm:p-5 shadow-xs">
       <!-- 可愛背景光暈點綴 -->
@@ -865,30 +1041,20 @@ function renderHeaderBanner(data) {
       <div class="pointer-events-none absolute right-24 -bottom-8 w-24 h-24 rounded-full bg-amber-200/35 blur-xl"></div>
 
       <div class="relative flex flex-col sm:flex-row items-center sm:items-center gap-4 sm:gap-5">
-        <!-- 左側：可愛動漫女孩圓角相框（點擊可更換圖片） -->
+        <!-- 左側：可愛動漫女孩圓角相框（僅管理者顯示換圖片） -->
         <div class="relative group shrink-0">
           <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-[3px] border-white shadow-md ring-2 ring-amber-300/90 bg-amber-100">
             <img
               src="${escapeAttr(avatarSrc)}"
               onerror="this.onerror=null; this.src='${escapeAttr(fallbackSvg)}';"
               alt="Speaking Club Cute Host"
-              class="w-full h-full object-cover object-top transition duration-300 group-hover:scale-105"
+              class="w-full h-full object-cover object-top transition duration-300 ${isAdminMode ? 'group-hover:scale-105' : ''}"
             />
           </div>
-          <!-- 右上角可愛小徽章 -->
           <span class="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-amber-400 text-white text-sm flex items-center justify-center shadow-xs border-2 border-white select-none">
             ✨
           </span>
-          <!-- 懸浮換圖按鈕 -->
-          <button
-            type="button"
-            onclick="triggerAvatarUpload()"
-            class="absolute inset-x-1.5 bottom-1.5 py-1 px-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white text-[11px] font-bold opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition flex items-center justify-center gap-1 shadow-xs"
-            title="點擊選擇電腦或手機中的可愛圖片"
-          >
-            <span>🖼️</span>
-            <span>換圖片</span>
-          </button>
+          ${changeAvatarBtnHtml}
         </div>
 
         <!-- 右側：活動資訊欄 -->
@@ -907,15 +1073,7 @@ function renderHeaderBanner(data) {
             <h2 id="docTitle" class="en-font text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
               ${safeTitle}
             </h2>
-            <button
-              type="button"
-              onclick="editDocHeader()"
-              class="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-white/80 hover:bg-white border border-amber-200 px-2.5 py-1 rounded-full shadow-2xs transition"
-              title="編輯標題與連結"
-            >
-              <span>✏️</span>
-              <span>編輯</span>
-            </button>
+            ${editHeaderBtnHtml}
           </div>
 
           ${meetUrl ? `
@@ -1237,7 +1395,7 @@ window.lookupBlankWord = function(secIdx, itemIdx, pIdx) {
 };
 
 window.mergeWithPrevious = async function(secIdx, itemIdx) {
-  if (itemIdx <= 0) return;
+  if (!isAdminMode || itemIdx <= 0) return;
   editingTarget = { secIdx: null, itemIdx: null };
   const items = currentScript.sections[secIdx].items;
   const prev = items[itemIdx - 1];
@@ -1258,6 +1416,7 @@ window.mergeWithPrevious = async function(secIdx, itemIdx) {
 };
 
 window.deleteSentence = function(secIdx, itemIdx) {
+  if (!isAdminMode) return;
   const sec = currentScript.sections[secIdx];
   if (!sec || !Array.isArray(sec.items)) return;
 
@@ -1272,6 +1431,7 @@ window.deleteSentence = function(secIdx, itemIdx) {
 };
 
 window.editSentence = function(secIdx, itemIdx) {
+  if (!isAdminMode) return;
   editingTarget = { secIdx, itemIdx };
   renderScript(currentScript);
 
@@ -1294,6 +1454,7 @@ window.cancelInlineEdit = function() {
 };
 
 window.saveInlineEdit = async function(secIdx, itemIdx) {
+  if (!isAdminMode) return;
   const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
   const zhInput = document.getElementById(`edit-zh-${secIdx}-${itemIdx}`);
   if (!enInput || !zhInput) return;
@@ -1317,6 +1478,7 @@ window.saveInlineEdit = async function(secIdx, itemIdx) {
 };
 
 window.splitMultilineIntoItems = async function(secIdx, itemIdx) {
+  if (!isAdminMode) return;
   const enInput = document.getElementById(`edit-en-${secIdx}-${itemIdx}`);
   const zhInput = document.getElementById(`edit-zh-${secIdx}-${itemIdx}`);
   if (!enInput || !zhInput) return;
@@ -1367,7 +1529,7 @@ window.handleInlineEditKeydown = function(event, secIdx, itemIdx) {
 };
 
 // =========================================================================
-// 7. 講義排版渲染（Part 為主標題大橫幅，Step 為縮排次標題小標，內文較小）
+// 7. 講義排版渲染（Part 為主標題大橫幅，Step 為縮排次標題小標，非管理者僅見朗讀與複製）
 // =========================================================================
 function isStepSubSection(sec) {
   return /^Step\s*\d+/i.test((sec?.part || '').trim());
@@ -1501,7 +1663,7 @@ function renderScript(data) {
 
     let itemsHtml = sec.items.map((item, iIdx) => {
       const rowId = `row-${sIdx}-${iIdx}`;
-      const isEditingThisRow = editingTarget.secIdx === sIdx && editingTarget.itemIdx === iIdx;
+      const isEditingThisRow = isAdminMode && editingTarget.secIdx === sIdx && editingTarget.itemIdx === iIdx;
 
       if (isEditingThisRow) {
         const rawEn = item.templateEn ? item.templateEn.join('___') : (item.en || '');
@@ -1561,15 +1723,18 @@ function renderScript(data) {
         `;
       }
 
-      const subtleActions = `
-        <div class="flex items-center gap-1 shrink-0">
-          ${iIdx > 0 ? `<button onclick="mergeWithPrevious(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="與上一句合併">⬆️</button>` : ''}
-          <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="編輯此句">✏️</button>
-          <button onclick="deleteSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此文字框">🗑️</button>
-        </div>
-      `;
+      // 僅管理者模式才顯示合併、編輯與刪除按鈕；非管理者僅看到朗讀按鈕
+      const subtleActions = isAdminMode
+        ? `
+          <div class="flex items-center gap-1 shrink-0">
+            ${iIdx > 0 ? `<button onclick="mergeWithPrevious(${sIdx}, ${iIdx})" class="text-[11px] px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="與上一句合併">⬆️</button>` : ''}
+            <button onclick="editSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="編輯此句">✏️</button>
+            <button onclick="deleteSentence(${sIdx}, ${iIdx})" class="text-xs px-1.5 py-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="刪除此文字框">🗑️</button>
+          </div>
+        `
+        : '';
 
-      // 填空題型（內文字級縮小為 text-[15px] sm:text-base）
+      // 填空題型
       if (item.templateEn) {
         const filledVals = Array.isArray(item.filledValues) ? item.filledValues : [];
         let sentenceHtml = '';
@@ -1746,9 +1911,14 @@ function renderScript(data) {
 }
 
 // =========================================================================
-// 8. PDF 座標級解析、跨行斷句與自動中譯
+// 8. PDF 座標級解析、跨行斷句與自動中譯（僅限管理者操作）
 // =========================================================================
 window.handlePdfUpload = async function(event) {
+  if (!isAdminMode) {
+    event.target.value = '';
+    return;
+  }
+
   const file = event.target.files[0];
   if (!file) return;
 
@@ -1811,7 +1981,7 @@ window.handlePdfUpload = async function(event) {
   const parsedData = parseLinesToCoherentScript(reconstructedLines, file.name.replace(/\.pdf$/i, ''));
   parsedData.id = null;
   parsedData.avatarUrl = currentScript.avatarUrl || localStorage.getItem(LOCAL_AVATAR_KEY) || '';
-  document.getElementById('deleteCloudBtn').classList.add('hidden');
+  applyAdminUiPermissions();
   renderScript(parsedData);
 
   event.target.value = '';
@@ -2330,6 +2500,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// 初始渲染並載入 Firestore 講稿清單
+// 初始套用權限狀態、渲染並載入 Firestore 講稿清單
+applyAdminUiPermissions();
 renderScript(currentScript);
 fetchCloudScripts();
